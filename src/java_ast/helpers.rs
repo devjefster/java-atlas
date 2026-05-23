@@ -4,7 +4,7 @@ use tree_sitter::Node;
 
 use super::model::{
     JavaAnnotation, JavaAnnotationArgument, JavaAnnotationValue, JavaArgument, JavaPrimitiveType,
-    JavaReferenceType, JavaTypeArgument, JavaTypeRef, JavaWildcardBound,
+    JavaReferenceType, JavaTypeArgument, JavaTypeParameter, JavaTypeRef, JavaWildcardBound,
 };
 
 #[derive(Debug, Default)]
@@ -50,6 +50,23 @@ pub(super) fn get_identifier_list(node: Node, source: &str) -> Vec<JavaTypeRef> 
     let mut ids = Vec::new();
     collect_named_types(node, source, &mut ids);
     ids
+}
+
+/// Extracts the checked exception type list from a Java `throws` node.
+pub(super) fn get_throws(node: Node, source: &str) -> Vec<JavaTypeRef> {
+    named_children(node)
+        .into_iter()
+        .map(|child| parse_type_ref(child, source))
+        .collect()
+}
+
+/// Extracts generic type parameters declared on a type, method, or constructor.
+pub(super) fn get_type_parameters(node: Node, source: &str) -> Vec<JavaTypeParameter> {
+    named_children(node)
+        .into_iter()
+        .filter(|child| child.kind() == "type_parameter")
+        .map(|child| parse_type_parameter(child, source))
+        .collect()
 }
 
 fn collect_named_types(node: Node, source: &str, out: &mut Vec<JavaTypeRef>) {
@@ -158,17 +175,87 @@ pub(super) fn parse_type_ref(node: Node, source: &str) -> JavaTypeRef {
                 .map(JavaTypeRef::Primitive)
                 .unwrap_or_else(|| unsupported_type(node.kind(), &text))
         }
-        "type_identifier" | "scoped_type_identifier" | "identifier" | "scoped_identifier" => {
-            JavaTypeRef::Reference(JavaReferenceType {
-                name: text,
-                args: Vec::new(),
-            })
-        }
+        "type_identifier" | "identifier" => JavaTypeRef::Reference(JavaReferenceType {
+            qualifier: None,
+            name: text,
+            args: Vec::new(),
+        }),
+        "scoped_type_identifier" | "scoped_identifier" => parse_scoped_reference_type(node, source)
+            .unwrap_or_else(|| {
+                JavaTypeRef::Reference(JavaReferenceType {
+                    qualifier: None,
+                    name: text,
+                    args: Vec::new(),
+                })
+            }),
         "generic_type" => parse_generic_type(node, source),
         "array_type" => parse_array_type(node, source),
         "annotated_type" => parse_annotated_type(node, source),
         "wildcard" => parse_wildcard(node, source),
         _ => unsupported_type(node.kind(), &text),
+    }
+}
+
+fn parse_type_parameter(node: Node, source: &str) -> JavaTypeParameter {
+    let mut annotations = Vec::new();
+    let mut name = None;
+    let mut bounds = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "annotation" | "marker_annotation" => annotations.push(parse_annotation(child, source)),
+            "type_identifier" | "identifier" if name.is_none() => {
+                name = Some(node_text(child, source));
+            }
+            "type_bound" => bounds = get_throws(child, source),
+            _ => {}
+        }
+    }
+
+    JavaTypeParameter {
+        annotations,
+        name: name.unwrap_or_else(|| node_text(node, source)),
+        bounds,
+    }
+}
+
+fn parse_scoped_reference_type(node: Node, source: &str) -> Option<JavaTypeRef> {
+    let type_children = named_children(node)
+        .into_iter()
+        .filter(|child| {
+            matches!(
+                child.kind(),
+                "type_identifier"
+                    | "identifier"
+                    | "scoped_type_identifier"
+                    | "scoped_identifier"
+                    | "generic_type"
+            )
+        })
+        .collect::<Vec<_>>();
+    let (last, qualifier_parts) = type_children.split_last()?;
+    let qualifier = qualifier_parts
+        .last()
+        .map(|qualifier| Box::new(parse_type_ref(*qualifier, source)));
+    let annotations = named_children(node)
+        .into_iter()
+        .filter(|child| matches!(child.kind(), "annotation" | "marker_annotation"))
+        .map(|child| parse_annotation(child, source))
+        .collect::<Vec<_>>();
+
+    let reference = JavaTypeRef::Reference(JavaReferenceType {
+        qualifier,
+        name: node_text(*last, source),
+        args: Vec::new(),
+    });
+
+    if annotations.is_empty() {
+        Some(reference)
+    } else {
+        Some(JavaTypeRef::Annotated {
+            annotations,
+            inner: Box::new(reference),
+        })
     }
 }
 
@@ -241,14 +328,22 @@ pub(super) fn add_dimensions(ty: JavaTypeRef, dimensions: Node, source: &str) ->
 
 fn parse_generic_type(node: Node, source: &str) -> JavaTypeRef {
     let mut name = None;
+    let mut qualifier = None;
     let mut args = Vec::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "type_identifier" | "scoped_type_identifier" | "identifier" | "scoped_identifier"
-                if name.is_none() =>
-            {
+            "type_identifier" | "identifier" if name.is_none() => {
                 name = Some(node_text(child, source));
+            }
+            "scoped_type_identifier" | "scoped_identifier" if name.is_none() => {
+                match parse_scoped_reference_type(child, source) {
+                    Some(JavaTypeRef::Reference(reference)) => {
+                        qualifier = reference.qualifier;
+                        name = Some(reference.name);
+                    }
+                    _ => name = Some(node_text(child, source)),
+                }
             }
             "type_arguments" => args = parse_type_arguments(child, source),
             _ => {}
@@ -256,6 +351,7 @@ fn parse_generic_type(node: Node, source: &str) -> JavaTypeRef {
     }
 
     JavaTypeRef::Reference(JavaReferenceType {
+        qualifier,
         name: name.unwrap_or_else(|| node_text(node, source)),
         args,
     })
@@ -429,4 +525,11 @@ fn child_modifiers_annotations(node: Node, source: &str) -> Vec<JavaAnnotation> 
         }
     }
     annotations
+}
+
+fn named_children(node: Node) -> Vec<Node> {
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .filter(|child| child.is_named())
+        .collect()
 }

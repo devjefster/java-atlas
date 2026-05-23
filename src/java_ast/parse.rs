@@ -5,8 +5,8 @@ use tree_sitter_java::LANGUAGE;
 
 use super::error::JavaAstError;
 use super::helpers::{
-    add_dimensions, byte_range, get_args, get_declaration_metadata, get_identifier_list, node_text,
-    parse_annotation_value, parse_type_ref,
+    add_dimensions, byte_range, get_args, get_declaration_metadata, get_identifier_list,
+    get_throws, get_type_parameters, node_text, parse_annotation_value, parse_type_ref,
 };
 use super::model::{
     JavaAnnotationElement, JavaConstructor, JavaField, JavaFile, JavaMethod, JavaType, TypeKind,
@@ -106,6 +106,7 @@ fn parse_type(
     let mut name = String::new();
     let mut annotations = Vec::new();
     let mut modifiers = Vec::new();
+    let mut type_parameters = Vec::new();
     let mut extends = Vec::new();
     let mut implements = Vec::new();
     let mut components = Vec::new();
@@ -119,12 +120,14 @@ fn parse_type(
           (class_declaration
             (modifiers)? @modifiers
             name: (identifier) @name
+            type_parameters: (type_parameters)? @type_parameters
             superclass: (superclass)? @extends
             interfaces: (super_interfaces)? @implements
             body: (class_body) @body)
           (interface_declaration
             (modifiers)? @modifiers
             name: (identifier) @name
+            type_parameters: (type_parameters)? @type_parameters
             interfaces: (extends_interfaces)? @extends
             body: (interface_body) @body)
           (enum_declaration
@@ -135,6 +138,7 @@ fn parse_type(
           (record_declaration
             (modifiers)? @modifiers
             name: (identifier) @name
+            type_parameters: (type_parameters)? @type_parameters
             parameters: (formal_parameters) @components
             interfaces: (super_interfaces)? @implements
             body: (class_body) @body)
@@ -163,6 +167,7 @@ fn parse_type(
                 }
                 "extends" => extends = get_identifier_list(capture.node, source),
                 "implements" => implements = get_identifier_list(capture.node, source),
+                "type_parameters" => type_parameters = get_type_parameters(capture.node, source),
                 "components" => components = get_args(capture.node, source),
                 "body" => body_node = Some(capture.node),
                 _ => {}
@@ -184,6 +189,7 @@ fn parse_type(
         name,
         annotations,
         modifiers,
+        type_parameters,
         extends,
         implements,
         fields: Vec::new(),
@@ -283,10 +289,12 @@ fn extract_methods(
         r#"
         (method_declaration
           (modifiers)? @modifiers
+          type_parameters: (type_parameters)? @type_parameters
           type: (_) @return_type
           name: (identifier) @name
           parameters: (formal_parameters) @parameters
-          dimensions: (dimensions)? @dimensions) @method
+          dimensions: (dimensions)? @dimensions
+          (throws)? @throws) @method
     "#,
     )
     .map_err(|e| JavaAstError::QueryFailed(e.to_string()))?;
@@ -298,9 +306,11 @@ fn extract_methods(
         }
         let mut modifiers = Vec::new();
         let mut annotations = Vec::new();
+        let mut type_parameters = Vec::new();
         let mut return_type = None;
         let mut name = String::new();
         let mut args = Vec::new();
+        let mut throws = Vec::new();
         let mut range = (0, 0);
         for capture in m.captures {
             match method_names[capture.index as usize] {
@@ -311,6 +321,7 @@ fn extract_methods(
                     modifiers = metadata.modifiers;
                 }
                 "return_type" => return_type = Some(parse_type_ref(capture.node, source)),
+                "type_parameters" => type_parameters = get_type_parameters(capture.node, source),
                 "dimensions" => {
                     if let Some(current) = return_type.take() {
                         return_type = Some(add_dimensions(current, capture.node, source));
@@ -318,15 +329,18 @@ fn extract_methods(
                 }
                 "name" => name = node_text(capture.node, source),
                 "parameters" => args = get_args(capture.node, source),
+                "throws" => throws = get_throws(capture.node, source),
                 _ => {}
             }
         }
         java_type.methods.push(JavaMethod {
             annotations,
             modifiers,
+            type_parameters,
             return_type,
             name,
             args,
+            throws,
             range,
         });
     }
@@ -347,8 +361,10 @@ fn extract_constructors(
         [
           (constructor_declaration
             (modifiers)? @modifiers
+            type_parameters: (type_parameters)? @type_parameters
             name: (identifier) @name
-            parameters: (formal_parameters) @parameters)
+            parameters: (formal_parameters) @parameters
+            (throws)? @throws)
           (compact_constructor_declaration
             (modifiers)? @modifiers
             name: (identifier) @name)
@@ -364,8 +380,10 @@ fn extract_constructors(
         }
         let mut modifiers = Vec::new();
         let mut annotations = Vec::new();
+        let mut type_parameters = Vec::new();
         let mut name = String::new();
         let mut args = Vec::new();
+        let mut throws = Vec::new();
         let mut range = (0, 0);
         for capture in m.captures {
             match constructor_names[capture.index as usize] {
@@ -375,16 +393,20 @@ fn extract_constructors(
                     annotations = metadata.annotations;
                     modifiers = metadata.modifiers;
                 }
+                "type_parameters" => type_parameters = get_type_parameters(capture.node, source),
                 "name" => name = node_text(capture.node, source),
                 "parameters" => args = get_args(capture.node, source),
+                "throws" => throws = get_throws(capture.node, source),
                 _ => {}
             }
         }
         java_type.constructors.push(JavaConstructor {
             annotations,
             modifiers,
+            type_parameters,
             name,
             args,
+            throws,
             range,
         });
     }
@@ -774,6 +796,65 @@ mod tests {
             panic!("field generic argument should be a wildcard");
         };
         assert!(matches!(bound, Some(JavaWildcardBound::Extends(_))));
+    }
+
+    #[test]
+    fn parses_throws_type_parameters_and_nested_generics() {
+        let source = r#"
+            import java.io.IOException;
+            import java.io.Serializable;
+            import java.util.List;
+            import java.util.Map;
+
+            public class Types<T extends Serializable & Comparable<T>> {
+                public <C extends Config & AutoCloseable> Types() throws ConfigurationException {}
+
+                public <E extends Exception> Map.Entry<String, List<User.Id>> read()
+                        throws IOException, Outer.InnerException {
+                    return null;
+                }
+            }
+        "#;
+
+        let file = parse_java_file(source).expect("source should parse");
+        let ty = &file.types[0];
+
+        assert_eq!(
+            ty.type_parameters[0].to_string(),
+            "T extends Serializable & Comparable<T>"
+        );
+        assert_eq!(ty.type_parameters[0].bounds.len(), 2);
+
+        let constructor = &ty.constructors[0];
+        assert_eq!(
+            constructor.type_parameters[0].to_string(),
+            "C extends Config & AutoCloseable"
+        );
+        assert_eq!(constructor.throws[0].to_string(), "ConfigurationException");
+
+        let method = &ty.methods[0];
+        assert_eq!(method.type_parameters[0].to_string(), "E extends Exception");
+        assert_eq!(
+            method.return_type.as_ref().map(ToString::to_string),
+            Some("Map.Entry<String, List<User.Id>>".to_string())
+        );
+        assert_eq!(
+            method
+                .throws
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["IOException", "Outer.InnerException"]
+        );
+
+        let JavaTypeRef::Reference(return_ref) = method.return_type.as_ref().unwrap() else {
+            panic!("return type should be a reference");
+        };
+        assert_eq!(return_ref.name, "Entry");
+        assert_eq!(
+            return_ref.qualifier.as_ref().map(ToString::to_string),
+            Some("Map".to_string())
+        );
     }
 
     #[test]

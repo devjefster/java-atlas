@@ -10,7 +10,8 @@ pub use error::JavaAstError;
 pub use model::{
     JavaAnnotation, JavaAnnotationArgument, JavaAnnotationElement, JavaAnnotationValue,
     JavaArgument, JavaConstructor, JavaField, JavaFile, JavaMethod, JavaPrimitiveType,
-    JavaReferenceType, JavaType, JavaTypeArgument, JavaTypeRef, JavaWildcardBound, TypeKind,
+    JavaReferenceType, JavaType, JavaTypeArgument, JavaTypeParameter, JavaTypeRef,
+    JavaWildcardBound, TypeKind,
 };
 pub use parse::parse_java_file;
 pub use render::render_markdown;
@@ -38,17 +39,17 @@ mod tests {
             import java.util.Optional;
 
             @Service
-            public class UserService {
+            public class UserService<T extends AutoCloseable> {
                 @Inject
                 private final UserRepository repository;
 
                 @Autowired
-                public UserService(UserRepository repository) {
+                public UserService(UserRepository repository) throws ConfigurationException {
                     this.repository = repository;
                 }
 
                 @Deprecated
-                public Optional<User> findById(@NotNull Long id) {
+                public <E extends Exception> Optional<User> findById(@NotNull Long id) throws E {
                     return Optional.empty();
                 }
 
@@ -68,12 +69,16 @@ mod tests {
         validate_markdown(&markdown).expect("generated Markdown should be structurally valid");
         assert!(markdown.contains("## Class `UserService`"));
         assert!(markdown.contains("**Annotations:** `@Service`"));
+        assert!(markdown.contains("**Type Parameters:** `T extends AutoCloseable`"));
         assert!(markdown.contains("### Fields"));
         assert!(
             markdown.contains("| `@Inject` | `private final` | `UserRepository` | `repository` |")
         );
         assert!(markdown.contains("**Annotations:** `@Autowired`"));
+        assert!(markdown.contains("**Throws:** `ConfigurationException`"));
+        assert!(markdown.contains("**Type Parameters:** `E extends Exception`"));
         assert!(markdown.contains("**Arguments:** `@NotNull Long id`"));
+        assert!(markdown.contains("**Throws:** `E`"));
         assert!(markdown.contains("### Class `Inner`"));
         assert!(markdown.contains("## Enum `Status`"));
     }

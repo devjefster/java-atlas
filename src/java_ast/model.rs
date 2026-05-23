@@ -80,8 +80,16 @@ pub enum JavaTypeRef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JavaReferenceType {
+    pub qualifier: Option<Box<JavaTypeRef>>,
     pub name: String,
     pub args: Vec<JavaTypeArgument>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JavaTypeParameter {
+    pub annotations: Vec<JavaAnnotation>,
+    pub name: String,
+    pub bounds: Vec<JavaTypeRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,6 +169,9 @@ impl fmt::Display for JavaTypeRef {
 
 impl fmt::Display for JavaReferenceType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(qualifier) = &self.qualifier {
+            write!(f, "{qualifier}.")?;
+        }
         f.write_str(&self.name)?;
         if !self.args.is_empty() {
             let args = self
@@ -242,6 +253,23 @@ impl fmt::Display for JavaAnnotationValue {
     }
 }
 
+impl fmt::Display for JavaTypeParameter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_annotations_prefix(f, &self.annotations)?;
+        f.write_str(&self.name)?;
+        if !self.bounds.is_empty() {
+            let bounds = self
+                .bounds
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" & ");
+            write!(f, " extends {bounds}")?;
+        }
+        Ok(())
+    }
+}
+
 fn write_annotations_prefix(
     f: &mut fmt::Formatter<'_>,
     annotations: &[JavaAnnotation],
@@ -278,8 +306,10 @@ pub struct JavaField {
 pub struct JavaConstructor {
     pub annotations: Vec<JavaAnnotation>,
     pub modifiers: Vec<String>,
+    pub type_parameters: Vec<JavaTypeParameter>,
     pub name: String,
     pub args: Vec<JavaArgument>,
+    pub throws: Vec<JavaTypeRef>,
     pub range: (usize, usize),
 }
 
@@ -287,9 +317,11 @@ pub struct JavaConstructor {
 pub struct JavaMethod {
     pub annotations: Vec<JavaAnnotation>,
     pub modifiers: Vec<String>,
+    pub type_parameters: Vec<JavaTypeParameter>,
     pub return_type: Option<JavaTypeRef>,
     pub name: String,
     pub args: Vec<JavaArgument>,
+    pub throws: Vec<JavaTypeRef>,
     pub range: (usize, usize),
 }
 
@@ -308,6 +340,7 @@ pub struct JavaType {
     pub name: String,
     pub annotations: Vec<JavaAnnotation>,
     pub modifiers: Vec<String>,
+    pub type_parameters: Vec<JavaTypeParameter>,
     pub extends: Vec<JavaTypeRef>,
     pub implements: Vec<JavaTypeRef>,
     pub fields: Vec<JavaField>,

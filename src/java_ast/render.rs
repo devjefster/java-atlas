@@ -62,6 +62,12 @@ fn render_type(ty: &JavaType, level: usize) -> String {
     if !ty.modifiers.is_empty() {
         meta.push(format!("**Modifiers:** `{}`", ty.modifiers.join(" ")));
     }
+    if !ty.type_parameters.is_empty() {
+        meta.push(format!(
+            "**Type Parameters:** `{}`",
+            join_display(&ty.type_parameters, ", ")
+        ));
+    }
     if !ty.extends.is_empty() {
         meta.push(format!(
             "**Extends:** `{}`",
@@ -108,9 +114,21 @@ fn render_type(ty: &JavaType, level: usize) -> String {
             if !cons.modifiers.is_empty() {
                 meta.push(format!("**Modifiers:** `{}`", cons.modifiers.join(" ")));
             }
+            if !cons.type_parameters.is_empty() {
+                meta.push(format!(
+                    "**Type Parameters:** `{}`",
+                    join_display(&cons.type_parameters, ", ")
+                ));
+            }
             if !cons.args.is_empty() {
                 let args_str = format_args(&cons.args);
                 meta.push(format!("**Arguments:** `{}`", args_str));
+            }
+            if !cons.throws.is_empty() {
+                meta.push(format!(
+                    "**Throws:** `{}`",
+                    join_display(&cons.throws, ", ")
+                ));
             }
             if !meta.is_empty() {
                 out.push_str(&format!("{}\n\n", meta.join("\n")));
@@ -134,12 +152,24 @@ fn render_type(ty: &JavaType, level: usize) -> String {
             if !method.modifiers.is_empty() {
                 meta.push(format!("**Modifiers:** `{}`", method.modifiers.join(" ")));
             }
+            if !method.type_parameters.is_empty() {
+                meta.push(format!(
+                    "**Type Parameters:** `{}`",
+                    join_display(&method.type_parameters, ", ")
+                ));
+            }
             if let Some(rt) = &method.return_type {
                 meta.push(format!("**Returns:** `{}`", rt));
             }
             if !method.args.is_empty() {
                 let args_str = format_args(&method.args);
                 meta.push(format!("**Arguments:** `{}`", args_str));
+            }
+            if !method.throws.is_empty() {
+                meta.push(format!(
+                    "**Throws:** `{}`",
+                    join_display(&method.throws, ", ")
+                ));
             }
             if !meta.is_empty() {
                 out.push_str(&format!("{}\n\n", meta.join("\n")));

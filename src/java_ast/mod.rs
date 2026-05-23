@@ -8,8 +8,9 @@ mod render;
 
 pub use error::JavaAstError;
 pub use model::{
-    JavaAnnotationElement, JavaArgument, JavaConstructor, JavaField, JavaFile, JavaMethod,
-    JavaType, TypeKind,
+    JavaAnnotation, JavaAnnotationArgument, JavaAnnotationElement, JavaAnnotationValue,
+    JavaArgument, JavaConstructor, JavaField, JavaFile, JavaMethod, JavaPrimitiveType,
+    JavaReferenceType, JavaType, JavaTypeArgument, JavaTypeRef, JavaWildcardBound, TypeKind,
 };
 pub use parse::parse_java_file;
 pub use render::render_markdown;

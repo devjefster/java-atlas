@@ -1,6 +1,8 @@
 //! Markdown rendering for parsed Java models.
 
 use super::error::JavaAstError;
+use std::fmt;
+
 use super::model::{JavaArgument, JavaFile, JavaType, TypeKind};
 
 /// Renders a parsed Java file model as Markdown.
@@ -52,16 +54,25 @@ fn render_type(ty: &JavaType, level: usize) -> String {
 
     let mut meta = Vec::new();
     if !ty.annotations.is_empty() {
-        meta.push(format!("**Annotations:** `{}`", ty.annotations.join(" ")));
+        meta.push(format!(
+            "**Annotations:** `{}`",
+            join_display(&ty.annotations, " ")
+        ));
     }
     if !ty.modifiers.is_empty() {
         meta.push(format!("**Modifiers:** `{}`", ty.modifiers.join(" ")));
     }
     if !ty.extends.is_empty() {
-        meta.push(format!("**Extends:** `{}`", ty.extends.join(", ")));
+        meta.push(format!(
+            "**Extends:** `{}`",
+            join_display(&ty.extends, ", ")
+        ));
     }
     if !ty.implements.is_empty() {
-        meta.push(format!("**Implements:** `{}`", ty.implements.join(", ")));
+        meta.push(format!(
+            "**Implements:** `{}`",
+            join_display(&ty.implements, ", ")
+        ));
     }
     if !meta.is_empty() {
         out.push_str(&format!("{}\n\n", meta.join("\n")));
@@ -74,7 +85,7 @@ fn render_type(ty: &JavaType, level: usize) -> String {
         for field in &ty.fields {
             out.push_str(&format!(
                 "| `{}` | `{}` | `{}` | `{}` |\n",
-                field.annotations.join(" "),
+                join_display(&field.annotations, " "),
                 field.modifiers.join(" "),
                 field.ty,
                 field.name
@@ -89,7 +100,10 @@ fn render_type(ty: &JavaType, level: usize) -> String {
             out.push_str(&format!("{} `{}`\n\n", item_heading, cons.name));
             let mut meta = Vec::new();
             if !cons.annotations.is_empty() {
-                meta.push(format!("**Annotations:** `{}`", cons.annotations.join(" ")));
+                meta.push(format!(
+                    "**Annotations:** `{}`",
+                    join_display(&cons.annotations, " ")
+                ));
             }
             if !cons.modifiers.is_empty() {
                 meta.push(format!("**Modifiers:** `{}`", cons.modifiers.join(" ")));
@@ -114,7 +128,7 @@ fn render_type(ty: &JavaType, level: usize) -> String {
             if !method.annotations.is_empty() {
                 meta.push(format!(
                     "**Annotations:** `{}`",
-                    method.annotations.join(" ")
+                    join_display(&method.annotations, " ")
                 ));
             }
             if !method.modifiers.is_empty() {
@@ -150,7 +164,7 @@ fn render_type(ty: &JavaType, level: usize) -> String {
         for comp in &ty.record_components {
             out.push_str(&format!(
                 "| `{}` | `{}` | `{}` |\n",
-                comp.annotations.join(" "),
+                join_display(&comp.annotations, " "),
                 comp.ty,
                 comp.name
             ));
@@ -165,7 +179,7 @@ fn render_type(ty: &JavaType, level: usize) -> String {
             if !elem.annotations.is_empty() {
                 out.push_str(&format!(
                     "- **Annotations:** `{}`\n",
-                    elem.annotations.join(" ")
+                    join_display(&elem.annotations, " ")
                 ));
             }
             out.push_str(&format!("- **Returns:** `{}`\n\n", elem.return_type));
@@ -185,10 +199,22 @@ fn format_args(args: &[JavaArgument]) -> String {
             let prefix = if arg.annotations.is_empty() {
                 String::new()
             } else {
-                format!("{} ", arg.annotations.join(" "))
+                format!("{} ", join_display(&arg.annotations, " "))
             };
-            format!("{}{} {}", prefix, arg.ty, arg.name)
+            if arg.varargs {
+                format!("{}{}... {}", prefix, arg.ty, arg.name)
+            } else {
+                format!("{}{} {}", prefix, arg.ty, arg.name)
+            }
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn join_display<T: fmt::Display>(items: &[T], separator: &str) -> String {
+    items
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(separator)
 }

@@ -5,7 +5,8 @@ use tree_sitter_java::LANGUAGE;
 
 use super::error::JavaAstError;
 use super::helpers::{
-    byte_range, get_args, get_declaration_metadata, get_identifier_list, node_text,
+    add_dimensions, byte_range, get_args, get_declaration_metadata, get_identifier_list, node_text,
+    parse_annotation_value, parse_type_ref,
 };
 use super::model::{
     JavaAnnotationElement, JavaConstructor, JavaField, JavaFile, JavaMethod, JavaType, TypeKind,
@@ -224,7 +225,8 @@ fn extract_fields(
           (modifiers)? @modifiers
           type: (_) @type
           declarator: (variable_declarator
-            name: (identifier) @name)) @field
+            name: (identifier) @name
+            dimensions: (dimensions)? @dimensions)) @field
     "#,
     )
     .map_err(|e| JavaAstError::QueryFailed(e.to_string()))?;
@@ -236,7 +238,7 @@ fn extract_fields(
         }
         let mut modifiers = Vec::new();
         let mut annotations = Vec::new();
-        let mut ty = String::new();
+        let mut ty = None;
         let mut name = String::new();
         let mut range = (0, 0);
         for capture in m.captures {
@@ -247,7 +249,12 @@ fn extract_fields(
                     annotations = metadata.annotations;
                     modifiers = metadata.modifiers;
                 }
-                "type" => ty = node_text(capture.node, source),
+                "type" => ty = Some(parse_type_ref(capture.node, source)),
+                "dimensions" => {
+                    if let Some(current) = ty.take() {
+                        ty = Some(add_dimensions(current, capture.node, source));
+                    }
+                }
                 "name" => name = node_text(capture.node, source),
                 _ => {}
             }
@@ -255,7 +262,7 @@ fn extract_fields(
         java_type.fields.push(JavaField {
             annotations,
             modifiers,
-            ty,
+            ty: ty.unwrap_or_else(|| parse_type_ref(body, source)),
             name,
             range,
         });
@@ -278,7 +285,8 @@ fn extract_methods(
           (modifiers)? @modifiers
           type: (_) @return_type
           name: (identifier) @name
-          parameters: (formal_parameters) @parameters) @method
+          parameters: (formal_parameters) @parameters
+          dimensions: (dimensions)? @dimensions) @method
     "#,
     )
     .map_err(|e| JavaAstError::QueryFailed(e.to_string()))?;
@@ -302,7 +310,12 @@ fn extract_methods(
                     annotations = metadata.annotations;
                     modifiers = metadata.modifiers;
                 }
-                "return_type" => return_type = Some(node_text(capture.node, source)),
+                "return_type" => return_type = Some(parse_type_ref(capture.node, source)),
+                "dimensions" => {
+                    if let Some(current) = return_type.take() {
+                        return_type = Some(add_dimensions(current, capture.node, source));
+                    }
+                }
                 "name" => name = node_text(capture.node, source),
                 "parameters" => args = get_args(capture.node, source),
                 _ => {}
@@ -433,7 +446,9 @@ fn extract_annotation_elements(
         (annotation_type_element_declaration
           (modifiers)? @modifiers
           type: (_) @return_type
-          name: (identifier) @name) @annotation_element
+          name: (identifier) @name
+          dimensions: (dimensions)? @dimensions
+          value: (_)? @default_value) @annotation_element
     "#,
     )
     .map_err(|e| JavaAstError::QueryFailed(e.to_string()))?;
@@ -445,7 +460,8 @@ fn extract_annotation_elements(
         }
         let mut annotations = Vec::new();
         let mut name = String::new();
-        let mut return_type = String::new();
+        let mut return_type = None;
+        let mut default_value = None;
         let mut range = (0, 0);
         for capture in m.captures {
             match ann_element_names[capture.index as usize] {
@@ -454,15 +470,23 @@ fn extract_annotation_elements(
                     annotations = get_declaration_metadata(capture.node, source).annotations;
                 }
                 "name" => name = node_text(capture.node, source),
-                "return_type" => return_type = node_text(capture.node, source),
+                "return_type" => return_type = Some(parse_type_ref(capture.node, source)),
+                "dimensions" => {
+                    if let Some(current) = return_type.take() {
+                        return_type = Some(add_dimensions(current, capture.node, source));
+                    }
+                }
+                "default_value" => {
+                    default_value = Some(parse_annotation_value(capture.node, source))
+                }
                 _ => {}
             }
         }
         java_type.annotation_elements.push(JavaAnnotationElement {
             annotations,
             name,
-            return_type,
-            default_value: None,
+            return_type: return_type.unwrap_or_else(|| parse_type_ref(body, source)),
+            default_value,
             range,
         });
     }
@@ -585,6 +609,11 @@ fn is_type_body(kind: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::java_ast::model::{
+        JavaAnnotationArgument, JavaAnnotationValue, JavaPrimitiveType, JavaTypeArgument,
+        JavaTypeRef, JavaWildcardBound,
+    };
+
     use super::{TypeKind, parse_java_file};
 
     #[test]
@@ -656,22 +685,33 @@ mod tests {
         let ty = &file.types[0];
 
         assert_eq!(ty.kind, TypeKind::Record);
-        assert_eq!(ty.annotations, vec!["@Entity"]);
+        assert_eq!(ty.annotations[0].name, "Entity");
         assert_eq!(ty.modifiers, vec!["public"]);
-        assert_eq!(ty.record_components[0].annotations, vec!["@NotNull"]);
-        assert_eq!(ty.record_components[1].annotations, vec!["@Size(max = 20)"]);
-        assert_eq!(ty.record_components[1].ty, "String...");
+        assert_eq!(ty.record_components[0].annotations[0].name, "NotNull");
+        assert_eq!(ty.record_components[1].annotations[0].name, "Size");
+        assert_eq!(
+            ty.record_components[1].annotations[0].to_string(),
+            "@Size(max = 20)"
+        );
+        assert_eq!(ty.record_components[1].ty.to_string(), "String");
+        assert!(ty.record_components[1].varargs);
 
-        assert_eq!(ty.constructors[0].annotations, vec!["@Inject"]);
+        assert_eq!(ty.constructors[0].annotations[0].name, "Inject");
         assert_eq!(ty.constructors[0].modifiers, vec!["public"]);
 
-        assert_eq!(ty.fields[0].annotations, vec!["@Column(name = \"email\")"]);
+        assert_eq!(
+            ty.fields[0].annotations[0].to_string(),
+            "@Column(name = \"email\")"
+        );
         assert_eq!(ty.fields[0].modifiers, vec!["private", "final"]);
 
-        assert_eq!(ty.methods[0].annotations, vec!["@Deprecated"]);
+        assert_eq!(ty.methods[0].annotations[0].name, "Deprecated");
         assert_eq!(ty.methods[0].modifiers, vec!["public"]);
-        assert_eq!(ty.methods[0].return_type, Some("String".to_string()));
-        assert_eq!(ty.methods[0].args[0].annotations, vec!["@NotNull"]);
+        assert_eq!(
+            ty.methods[0].return_type.as_ref().map(ToString::to_string),
+            Some("String".to_string())
+        );
+        assert_eq!(ty.methods[0].args[0].annotations[0].name, "NotNull");
     }
 
     #[test]
@@ -687,7 +727,114 @@ mod tests {
         let element = &file.types[0].annotation_elements[0];
 
         assert_eq!(file.types[0].kind, TypeKind::Annotation);
-        assert_eq!(element.annotations, vec!["@Deprecated"]);
+        assert_eq!(element.annotations[0].name, "Deprecated");
         assert_eq!(element.name, "value");
+    }
+
+    #[test]
+    fn parses_structured_type_references() {
+        let source = r#"
+            import java.util.List;
+            import java.util.Map;
+
+            public class Types extends Base<String> implements Handler<Map<String, List<Integer[]>>> {
+                private List<? extends Number>[] numbers;
+                private String legacy[];
+                public void accept(List<? super User> users, @Valid String[] names) {}
+                public String legacyReturn()[];
+            }
+        "#;
+
+        let file = parse_java_file(source).expect("source should parse");
+        let ty = &file.types[0];
+
+        assert_eq!(ty.extends[0].to_string(), "Base<String>");
+        assert_eq!(
+            ty.implements[0].to_string(),
+            "Handler<Map<String, List<Integer[]>>>"
+        );
+        assert_eq!(ty.fields[0].ty.to_string(), "List<? extends Number>[]");
+        assert_eq!(ty.fields[1].ty.to_string(), "String[]");
+        assert_eq!(ty.methods[0].return_type, Some(JavaTypeRef::Void));
+        assert_eq!(ty.methods[0].args[0].ty.to_string(), "List<? super User>");
+        assert_eq!(ty.methods[0].args[1].ty.to_string(), "String[]");
+        assert_eq!(
+            ty.methods[1].return_type.as_ref().map(ToString::to_string),
+            Some("String[]".to_string())
+        );
+
+        let JavaTypeRef::Array { element, .. } = &ty.fields[0].ty else {
+            panic!("field should be an array type");
+        };
+        let JavaTypeRef::Reference(reference) = element.as_ref() else {
+            panic!("field array element should be a generic reference");
+        };
+        let JavaTypeArgument::Wildcard(JavaTypeRef::Wildcard { bound, .. }) = &reference.args[0]
+        else {
+            panic!("field generic argument should be a wildcard");
+        };
+        assert!(matches!(bound, Some(JavaWildcardBound::Extends(_))));
+    }
+
+    #[test]
+    fn parses_structured_annotation_values_and_defaults() {
+        let source = r#"
+            @Column(name = "email", nullable = false, roles = {"ADMIN", "USER"}, nested = @Inner(count = 2), type = String.class)
+            public @interface Labels {
+                @Deprecated
+                String value() default "user";
+                int count() default 1 + 2;
+            }
+        "#;
+
+        let file = parse_java_file(source).expect("source should parse");
+        let annotation = &file.types[0].annotations[0];
+        assert_eq!(annotation.name, "Column");
+        assert_eq!(
+            annotation.to_string(),
+            "@Column(name = \"email\", nullable = false, roles = {\"ADMIN\", \"USER\"}, nested = @Inner(count = 2), type = String.class)"
+        );
+
+        assert!(matches!(
+            &annotation.arguments[0],
+            JavaAnnotationArgument::Named {
+                name,
+                value: JavaAnnotationValue::String(_),
+            } if name == "name"
+        ));
+        assert!(matches!(
+            &annotation.arguments[1],
+            JavaAnnotationArgument::Named {
+                name,
+                value: JavaAnnotationValue::Boolean(false),
+            } if name == "nullable"
+        ));
+        assert!(matches!(
+            &annotation.arguments[2],
+            JavaAnnotationArgument::Named {
+                name,
+                value: JavaAnnotationValue::Array(values),
+            } if name == "roles" && values.len() == 2
+        ));
+        assert!(matches!(
+            &annotation.arguments[4],
+            JavaAnnotationArgument::Named {
+                name,
+                value: JavaAnnotationValue::ClassLiteral(JavaTypeRef::Reference(_)),
+            } if name == "type"
+        ));
+
+        assert!(matches!(
+            file.types[0].annotation_elements[0].default_value,
+            Some(JavaAnnotationValue::String(_))
+        ));
+        assert!(matches!(
+            file.types[0].annotation_elements[1].return_type,
+            JavaTypeRef::Primitive(JavaPrimitiveType::Int)
+        ));
+        assert!(matches!(
+            file.types[0].annotation_elements[1].default_value,
+            Some(JavaAnnotationValue::Expression(_))
+        ));
     }
 }

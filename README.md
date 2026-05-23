@@ -97,7 +97,9 @@ The tool emits a Markdown document with this shape:
 **Arguments:** `@NotNull Long id`
 ```
 
-Nested types are rendered recursively at the next heading depth. Declaration and parameter annotations are preserved as source text and rendered separately from Java keyword modifiers.
+Nested types are rendered recursively at the next heading depth. Declaration and parameter annotations are rendered separately from Java keyword modifiers.
+
+The library model keeps Java type references and annotations structured. Type references distinguish primitives, references, generics, arrays, wildcards, and type-use annotations. Annotations expose their name plus default or named arguments, including arrays, nested annotations, class literals, primitive literals, references, and constant-expression text.
 
 ## Scope
 

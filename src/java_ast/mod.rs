@@ -36,14 +36,18 @@ mod tests {
 
             import java.util.Optional;
 
+            @Service
             public class UserService {
+                @Inject
                 private final UserRepository repository;
 
+                @Autowired
                 public UserService(UserRepository repository) {
                     this.repository = repository;
                 }
 
-                public Optional<User> findById(Long id) {
+                @Deprecated
+                public Optional<User> findById(@NotNull Long id) {
                     return Optional.empty();
                 }
 
@@ -62,7 +66,13 @@ mod tests {
 
         validate_markdown(&markdown).expect("generated Markdown should be structurally valid");
         assert!(markdown.contains("## Class `UserService`"));
+        assert!(markdown.contains("**Annotations:** `@Service`"));
         assert!(markdown.contains("### Fields"));
+        assert!(
+            markdown.contains("| `@Inject` | `private final` | `UserRepository` | `repository` |")
+        );
+        assert!(markdown.contains("**Annotations:** `@Autowired`"));
+        assert!(markdown.contains("**Arguments:** `@NotNull Long id`"));
         assert!(markdown.contains("### Class `Inner`"));
         assert!(markdown.contains("## Enum `Status`"));
     }

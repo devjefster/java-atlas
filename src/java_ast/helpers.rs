@@ -4,6 +4,12 @@ use tree_sitter::Node;
 
 use super::model::JavaArgument;
 
+#[derive(Debug, Default)]
+pub(super) struct DeclarationMetadata {
+    pub annotations: Vec<String>,
+    pub modifiers: Vec<String>,
+}
+
 /// Returns the source text covered by a Tree-sitter node.
 pub(super) fn node_text(node: Node, source: &str) -> String {
     source[node.byte_range().start..node.byte_range().end].to_string()
@@ -15,19 +21,19 @@ pub(super) fn byte_range(node: Node) -> (usize, usize) {
     (range.start, range.end)
 }
 
-/// Extracts Java modifier keywords and annotations from a `modifiers` node.
-///
-/// In tree-sitter-java the `modifiers` node's children are the modifier tokens
-/// themselves (anonymous nodes like `"public"`, `"static"`) plus any leading
-/// annotations (named nodes like `marker_annotation`). We keep both and let
-/// the renderer join them with spaces, matching source order.
-pub(super) fn get_modifier_list(node: Node, source: &str) -> Vec<String> {
-    let mut mods = Vec::new();
+/// Splits Java modifier keywords from annotations in a `modifiers` node.
+pub(super) fn get_declaration_metadata(node: Node, source: &str) -> DeclarationMetadata {
+    let mut metadata = DeclarationMetadata::default();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        mods.push(node_text(child, source));
+        match child.kind() {
+            "annotation" | "marker_annotation" => {
+                metadata.annotations.push(node_text(child, source));
+            }
+            _ => metadata.modifiers.push(node_text(child, source)),
+        }
     }
-    mods
+    metadata
 }
 
 /// Extracts type identifiers from extends/implements nodes.
@@ -69,6 +75,7 @@ pub(super) fn get_args(node: Node, source: &str) -> Vec<JavaArgument> {
     for child in node.children(&mut cursor) {
         match child.kind() {
             "formal_parameter" => {
+                let annotations = child_modifiers_annotations(child, source);
                 let ty = child
                     .child_by_field_name("type")
                     .map(|n| node_text(n, source));
@@ -76,16 +83,27 @@ pub(super) fn get_args(node: Node, source: &str) -> Vec<JavaArgument> {
                     .child_by_field_name("name")
                     .map(|n| node_text(n, source));
                 if let (Some(ty), Some(name)) = (ty, name) {
-                    args.push(JavaArgument { ty, name });
+                    args.push(JavaArgument {
+                        annotations,
+                        ty,
+                        name,
+                    });
                 }
             }
             "spread_parameter" => {
+                let mut annotations = Vec::new();
                 let mut ty: Option<String> = None;
                 let mut name: Option<String> = None;
                 let mut inner = child.walk();
                 for grand in child.children(&mut inner) {
                     match grand.kind() {
-                        "modifiers" | "..." => {}
+                        "modifiers" => {
+                            annotations.extend(get_declaration_metadata(grand, source).annotations);
+                        }
+                        "annotation" | "marker_annotation" => {
+                            annotations.push(node_text(grand, source));
+                        }
+                        "..." => {}
                         "variable_declarator" => {
                             name = grand
                                 .child_by_field_name("name")
@@ -99,6 +117,7 @@ pub(super) fn get_args(node: Node, source: &str) -> Vec<JavaArgument> {
                 }
                 if let (Some(t), Some(n)) = (ty, name) {
                     args.push(JavaArgument {
+                        annotations,
                         ty: format!("{}...", t),
                         name: n,
                     });
@@ -108,4 +127,15 @@ pub(super) fn get_args(node: Node, source: &str) -> Vec<JavaArgument> {
         }
     }
     args
+}
+
+fn child_modifiers_annotations(node: Node, source: &str) -> Vec<String> {
+    let mut annotations = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "modifiers" {
+            annotations.extend(get_declaration_metadata(child, source).annotations);
+        }
+    }
+    annotations
 }

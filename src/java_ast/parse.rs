@@ -4,7 +4,9 @@ use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator}
 use tree_sitter_java::LANGUAGE;
 
 use super::error::JavaAstError;
-use super::helpers::{byte_range, get_args, get_identifier_list, get_modifier_list, node_text};
+use super::helpers::{
+    byte_range, get_args, get_declaration_metadata, get_identifier_list, node_text,
+};
 use super::model::{
     JavaAnnotationElement, JavaConstructor, JavaField, JavaFile, JavaMethod, JavaType, TypeKind,
 };
@@ -101,6 +103,7 @@ fn parse_type(
 ) -> Result<JavaType, JavaAstError> {
     let language: Language = LANGUAGE.into();
     let mut name = String::new();
+    let mut annotations = Vec::new();
     let mut modifiers = Vec::new();
     let mut extends = Vec::new();
     let mut implements = Vec::new();
@@ -152,7 +155,11 @@ fn parse_type(
             }
             match metadata_names[capture.index as usize] {
                 "name" => name = node_text(capture.node, source),
-                "modifiers" => modifiers = get_modifier_list(capture.node, source),
+                "modifiers" => {
+                    let metadata = get_declaration_metadata(capture.node, source);
+                    annotations = metadata.annotations;
+                    modifiers = metadata.modifiers;
+                }
                 "extends" => extends = get_identifier_list(capture.node, source),
                 "implements" => implements = get_identifier_list(capture.node, source),
                 "components" => components = get_args(capture.node, source),
@@ -174,6 +181,7 @@ fn parse_type(
     let mut java_type = JavaType {
         kind,
         name,
+        annotations,
         modifiers,
         extends,
         implements,
@@ -227,19 +235,25 @@ fn extract_fields(
             continue;
         }
         let mut modifiers = Vec::new();
+        let mut annotations = Vec::new();
         let mut ty = String::new();
         let mut name = String::new();
         let mut range = (0, 0);
         for capture in m.captures {
             match field_names[capture.index as usize] {
                 "field" => range = byte_range(capture.node),
-                "modifiers" => modifiers = get_modifier_list(capture.node, source),
+                "modifiers" => {
+                    let metadata = get_declaration_metadata(capture.node, source);
+                    annotations = metadata.annotations;
+                    modifiers = metadata.modifiers;
+                }
                 "type" => ty = node_text(capture.node, source),
                 "name" => name = node_text(capture.node, source),
                 _ => {}
             }
         }
         java_type.fields.push(JavaField {
+            annotations,
             modifiers,
             ty,
             name,
@@ -275,6 +289,7 @@ fn extract_methods(
             continue;
         }
         let mut modifiers = Vec::new();
+        let mut annotations = Vec::new();
         let mut return_type = None;
         let mut name = String::new();
         let mut args = Vec::new();
@@ -282,7 +297,11 @@ fn extract_methods(
         for capture in m.captures {
             match method_names[capture.index as usize] {
                 "method" => range = byte_range(capture.node),
-                "modifiers" => modifiers = get_modifier_list(capture.node, source),
+                "modifiers" => {
+                    let metadata = get_declaration_metadata(capture.node, source);
+                    annotations = metadata.annotations;
+                    modifiers = metadata.modifiers;
+                }
                 "return_type" => return_type = Some(node_text(capture.node, source)),
                 "name" => name = node_text(capture.node, source),
                 "parameters" => args = get_args(capture.node, source),
@@ -290,6 +309,7 @@ fn extract_methods(
             }
         }
         java_type.methods.push(JavaMethod {
+            annotations,
             modifiers,
             return_type,
             name,
@@ -311,10 +331,15 @@ fn extract_constructors(
     let constructor_query = Query::new(
         language,
         r#"
-        (constructor_declaration
-          (modifiers)? @modifiers
-          name: (identifier) @name
-          parameters: (formal_parameters) @parameters) @constructor
+        [
+          (constructor_declaration
+            (modifiers)? @modifiers
+            name: (identifier) @name
+            parameters: (formal_parameters) @parameters)
+          (compact_constructor_declaration
+            (modifiers)? @modifiers
+            name: (identifier) @name)
+        ] @constructor
     "#,
     )
     .map_err(|e| JavaAstError::QueryFailed(e.to_string()))?;
@@ -325,19 +350,25 @@ fn extract_constructors(
             continue;
         }
         let mut modifiers = Vec::new();
+        let mut annotations = Vec::new();
         let mut name = String::new();
         let mut args = Vec::new();
         let mut range = (0, 0);
         for capture in m.captures {
             match constructor_names[capture.index as usize] {
                 "constructor" => range = byte_range(capture.node),
-                "modifiers" => modifiers = get_modifier_list(capture.node, source),
+                "modifiers" => {
+                    let metadata = get_declaration_metadata(capture.node, source);
+                    annotations = metadata.annotations;
+                    modifiers = metadata.modifiers;
+                }
                 "name" => name = node_text(capture.node, source),
                 "parameters" => args = get_args(capture.node, source),
                 _ => {}
             }
         }
         java_type.constructors.push(JavaConstructor {
+            annotations,
             modifiers,
             name,
             args,
@@ -400,6 +431,7 @@ fn extract_annotation_elements(
         language,
         r#"
         (annotation_type_element_declaration
+          (modifiers)? @modifiers
           type: (_) @return_type
           name: (identifier) @name) @annotation_element
     "#,
@@ -411,18 +443,23 @@ fn extract_annotation_elements(
         if !match_has_direct_capture(m.captures, ann_element_names, "annotation_element", body) {
             continue;
         }
+        let mut annotations = Vec::new();
         let mut name = String::new();
         let mut return_type = String::new();
         let mut range = (0, 0);
         for capture in m.captures {
             match ann_element_names[capture.index as usize] {
                 "annotation_element" => range = byte_range(capture.node),
+                "modifiers" => {
+                    annotations = get_declaration_metadata(capture.node, source).annotations;
+                }
                 "name" => name = node_text(capture.node, source),
                 "return_type" => return_type = node_text(capture.node, source),
                 _ => {}
             }
         }
         java_type.annotation_elements.push(JavaAnnotationElement {
+            annotations,
             name,
             return_type,
             default_value: None,
@@ -592,5 +629,65 @@ mod tests {
         assert_eq!(file.types[0].nested_types[0].fields[0].name, "value");
         assert_eq!(file.types[1].name, "Status");
         assert_eq!(file.types[1].kind, TypeKind::Enum);
+    }
+
+    #[test]
+    fn parses_annotations_separately_from_modifiers() {
+        let source = r#"
+            @Entity
+            public record User(
+                @NotNull String name,
+                @Size(max = 20) String... tags
+            ) {
+                @Inject
+                public User {}
+
+                @Column(name = "email")
+                private final String email;
+
+                @Deprecated
+                public String email(@NotNull String fallback) {
+                    return email;
+                }
+            }
+        "#;
+
+        let file = parse_java_file(source).expect("source should parse");
+        let ty = &file.types[0];
+
+        assert_eq!(ty.kind, TypeKind::Record);
+        assert_eq!(ty.annotations, vec!["@Entity"]);
+        assert_eq!(ty.modifiers, vec!["public"]);
+        assert_eq!(ty.record_components[0].annotations, vec!["@NotNull"]);
+        assert_eq!(ty.record_components[1].annotations, vec!["@Size(max = 20)"]);
+        assert_eq!(ty.record_components[1].ty, "String...");
+
+        assert_eq!(ty.constructors[0].annotations, vec!["@Inject"]);
+        assert_eq!(ty.constructors[0].modifiers, vec!["public"]);
+
+        assert_eq!(ty.fields[0].annotations, vec!["@Column(name = \"email\")"]);
+        assert_eq!(ty.fields[0].modifiers, vec!["private", "final"]);
+
+        assert_eq!(ty.methods[0].annotations, vec!["@Deprecated"]);
+        assert_eq!(ty.methods[0].modifiers, vec!["public"]);
+        assert_eq!(ty.methods[0].return_type, Some("String".to_string()));
+        assert_eq!(ty.methods[0].args[0].annotations, vec!["@NotNull"]);
+    }
+
+    #[test]
+    fn parses_annotation_element_annotations() {
+        let source = r#"
+            public @interface Labels {
+                @Deprecated
+                String value();
+            }
+        "#;
+
+        let file = parse_java_file(source).expect("source should parse");
+        let element = &file.types[0].annotation_elements[0];
+
+        assert_eq!(file.types[0].kind, TypeKind::Annotation);
+        assert_eq!(element.annotations, vec!["@Deprecated"]);
+        assert_eq!(element.name, "value");
     }
 }

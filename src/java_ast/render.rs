@@ -1,7 +1,7 @@
 //! Markdown rendering for parsed Java models.
 
 use super::error::JavaAstError;
-use super::model::{JavaFile, JavaType, TypeKind};
+use super::model::{JavaArgument, JavaFile, JavaType, TypeKind};
 
 /// Renders a parsed Java file model as Markdown.
 pub fn render_markdown(file: &JavaFile) -> Result<String, JavaAstError> {
@@ -51,6 +51,9 @@ fn render_type(ty: &JavaType, level: usize) -> String {
     ));
 
     let mut meta = Vec::new();
+    if !ty.annotations.is_empty() {
+        meta.push(format!("**Annotations:** `{}`", ty.annotations.join(" ")));
+    }
     if !ty.modifiers.is_empty() {
         meta.push(format!("**Modifiers:** `{}`", ty.modifiers.join(" ")));
     }
@@ -66,11 +69,12 @@ fn render_type(ty: &JavaType, level: usize) -> String {
 
     if !ty.fields.is_empty() {
         out.push_str(&format!("{} Fields\n\n", section_heading));
-        out.push_str("| Modifiers | Type | Name |\n");
-        out.push_str("| --- | --- | --- |\n");
+        out.push_str("| Annotations | Modifiers | Type | Name |\n");
+        out.push_str("| --- | --- | --- | --- |\n");
         for field in &ty.fields {
             out.push_str(&format!(
-                "| `{}` | `{}` | `{}` |\n",
+                "| `{}` | `{}` | `{}` | `{}` |\n",
+                field.annotations.join(" "),
                 field.modifiers.join(" "),
                 field.ty,
                 field.name
@@ -84,16 +88,14 @@ fn render_type(ty: &JavaType, level: usize) -> String {
         for cons in &ty.constructors {
             out.push_str(&format!("{} `{}`\n\n", item_heading, cons.name));
             let mut meta = Vec::new();
+            if !cons.annotations.is_empty() {
+                meta.push(format!("**Annotations:** `{}`", cons.annotations.join(" ")));
+            }
             if !cons.modifiers.is_empty() {
                 meta.push(format!("**Modifiers:** `{}`", cons.modifiers.join(" ")));
             }
             if !cons.args.is_empty() {
-                let args_str = cons
-                    .args
-                    .iter()
-                    .map(|a| format!("{} {}", a.ty, a.name))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let args_str = format_args(&cons.args);
                 meta.push(format!("**Arguments:** `{}`", args_str));
             }
             if !meta.is_empty() {
@@ -109,6 +111,12 @@ fn render_type(ty: &JavaType, level: usize) -> String {
         for method in &ty.methods {
             out.push_str(&format!("{} `{}`\n\n", item_heading, method.name));
             let mut meta = Vec::new();
+            if !method.annotations.is_empty() {
+                meta.push(format!(
+                    "**Annotations:** `{}`",
+                    method.annotations.join(" ")
+                ));
+            }
             if !method.modifiers.is_empty() {
                 meta.push(format!("**Modifiers:** `{}`", method.modifiers.join(" ")));
             }
@@ -116,12 +124,7 @@ fn render_type(ty: &JavaType, level: usize) -> String {
                 meta.push(format!("**Returns:** `{}`", rt));
             }
             if !method.args.is_empty() {
-                let args_str = method
-                    .args
-                    .iter()
-                    .map(|a| format!("{} {}", a.ty, a.name))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let args_str = format_args(&method.args);
                 meta.push(format!("**Arguments:** `{}`", args_str));
             }
             if !meta.is_empty() {
@@ -142,10 +145,15 @@ fn render_type(ty: &JavaType, level: usize) -> String {
 
     if !ty.record_components.is_empty() {
         out.push_str(&format!("{} Components\n\n", section_heading));
-        out.push_str("| Type | Name |\n");
-        out.push_str("| --- | --- |\n");
+        out.push_str("| Annotations | Type | Name |\n");
+        out.push_str("| --- | --- | --- |\n");
         for comp in &ty.record_components {
-            out.push_str(&format!("| `{}` | `{}` |\n", comp.ty, comp.name));
+            out.push_str(&format!(
+                "| `{}` | `{}` | `{}` |\n",
+                comp.annotations.join(" "),
+                comp.ty,
+                comp.name
+            ));
         }
         out.push('\n');
     }
@@ -154,6 +162,12 @@ fn render_type(ty: &JavaType, level: usize) -> String {
         out.push_str(&format!("{} Elements\n\n", section_heading));
         for elem in &ty.annotation_elements {
             out.push_str(&format!("{} `{}`\n\n", item_heading, elem.name));
+            if !elem.annotations.is_empty() {
+                out.push_str(&format!(
+                    "- **Annotations:** `{}`\n",
+                    elem.annotations.join(" ")
+                ));
+            }
             out.push_str(&format!("- **Returns:** `{}`\n\n", elem.return_type));
         }
     }
@@ -163,4 +177,18 @@ fn render_type(ty: &JavaType, level: usize) -> String {
     }
 
     out
+}
+
+fn format_args(args: &[JavaArgument]) -> String {
+    args.iter()
+        .map(|arg| {
+            let prefix = if arg.annotations.is_empty() {
+                String::new()
+            } else {
+                format!("{} ", arg.annotations.join(" "))
+            };
+            format!("{}{} {}", prefix, arg.ty, arg.name)
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }

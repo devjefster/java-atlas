@@ -11,12 +11,14 @@ pub enum TypeKind {
 
 #[derive(Debug, Clone)]
 pub struct JavaArgument {
+    pub annotations: Vec<String>,
     pub ty: String,
     pub name: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct JavaField {
+    pub annotations: Vec<String>,
     pub modifiers: Vec<String>,
     pub ty: String,
     pub name: String,
@@ -25,6 +27,7 @@ pub struct JavaField {
 
 #[derive(Debug, Clone)]
 pub struct JavaConstructor {
+    pub annotations: Vec<String>,
     pub modifiers: Vec<String>,
     pub name: String,
     pub args: Vec<JavaArgument>,
@@ -33,6 +36,7 @@ pub struct JavaConstructor {
 
 #[derive(Debug, Clone)]
 pub struct JavaMethod {
+    pub annotations: Vec<String>,
     pub modifiers: Vec<String>,
     pub return_type: Option<String>,
     pub name: String,
@@ -42,6 +46,7 @@ pub struct JavaMethod {
 
 #[derive(Debug, Clone)]
 pub struct JavaAnnotationElement {
+    pub annotations: Vec<String>,
     pub name: String,
     pub return_type: String,
     pub default_value: Option<String>,
@@ -52,6 +57,7 @@ pub struct JavaAnnotationElement {
 pub struct JavaType {
     pub kind: TypeKind,
     pub name: String,
+    pub annotations: Vec<String>,
     pub modifiers: Vec<String>,
     pub extends: Vec<String>,
     pub implements: Vec<String>,

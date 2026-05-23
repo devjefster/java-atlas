@@ -1,6 +1,6 @@
 # java-atlas
 
-A small command-line tool that walks a Java codebase and prints a Markdown summary of every `.java` file it finds: package, imports, and the shape of each declared type (class, interface, enum, record, annotation) with its modifiers, supertypes, fields, constructors, methods, and kind-specific members.
+A small command-line tool that walks a Java codebase and prints a Markdown summary of every `.java` file it finds: package, imports, and the shape of each declared type (class, interface, enum, record, annotation) with its annotations, modifiers, supertypes, fields, constructors, methods, and kind-specific members.
 
 ## Install
 
@@ -42,14 +42,18 @@ package com.example;
 
 import java.util.Optional;
 
+@Service
 public class UserService {
+    @Inject
     private final UserRepository repository;
 
+    @Autowired
     public UserService(UserRepository repository) {
         this.repository = repository;
     }
 
-    public Optional<User> findById(Long id) {
+    @Deprecated
+    public Optional<User> findById(@NotNull Long id) {
         return Optional.empty();
     }
 }
@@ -68,27 +72,32 @@ The tool emits a Markdown document with this shape:
 
 ## Class `UserService`
 
+**Annotations:** `@Service`
+**Modifiers:** `public`
+
 ### Fields
 
-| Modifiers | Type | Name |
-| --- | --- | --- |
-| `private final` | `UserRepository` | `repository` |
+| Annotations | Modifiers | Type | Name |
+| --- | --- | --- | --- |
+| `@Inject` | `private final` | `UserRepository` | `repository` |
 
 ### Constructors
 
 #### `UserService`
 
+**Annotations:** `@Autowired`
 **Arguments:** `UserRepository repository`
 
 ### Methods
 
 #### `findById`
 
+**Annotations:** `@Deprecated`
 **Returns:** `Optional<User>`
-**Arguments:** `Long id`
+**Arguments:** `@NotNull Long id`
 ```
 
-Nested types are rendered recursively at the next heading depth.
+Nested types are rendered recursively at the next heading depth. Declaration and parameter annotations are preserved as source text and rendered separately from Java keyword modifiers.
 
 ## Scope
 

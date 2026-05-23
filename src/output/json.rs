@@ -63,7 +63,7 @@ mod tests {
     fn json_exposes_resolved_fqn_across_files() {
         let mut asts = java::output::RESOLVED_FQN
             .iter()
-            .map(|source| parse_java_file(*source).expect("parse"))
+            .map(|source| parse_java_file(source).expect("parse"))
             .collect::<Vec<_>>();
         resolve_files(&mut asts);
 

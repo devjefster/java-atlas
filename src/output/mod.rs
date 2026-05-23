@@ -1,5 +1,6 @@
 //! Output rendering for parsed Java models in multiple formats.
 
+mod compact;
 mod json;
 mod markdown;
 mod toml;
@@ -68,7 +69,10 @@ impl From<::toml::ser::Error> for OutputError {
 /// - Markdown: emits one compact `# Java Atlas` document with a `##` section per
 ///   package and file bullets underneath.
 /// - JSON: emits a single array `[{ "path": ..., "ast": ... }, ...]`.
-/// - TOML: emits a single document with a `[[files]]` table array.
+/// - TOML: emits one compact document with `[[packages]]` sections and
+///   `[[packages.files]]` entries, skips empty collection fields, folds
+///   deterministic accessors/default constructors, and renders compact arrays
+///   inline where useful.
 pub fn render(files: &[FileOutput<'_>], format: Format) -> Result<String, OutputError> {
     match format {
         Format::Markdown => markdown::render(files),

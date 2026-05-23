@@ -10,7 +10,7 @@ use crate::java_ast::{
 };
 use crate::markdown::validate_markdown;
 
-use super::{FileOutput, OutputError};
+use super::{FileOutput, OutputError, compact};
 
 /// Render the whole codebase as a single Markdown document.
 ///
@@ -41,7 +41,6 @@ fn render_file_body(file: &JavaFile, out: &mut String, level: usize) {
 /// Render one Java type and recursively include nested types as compact bullets.
 fn render_type(ty: &JavaType, level: usize, out: &mut String) {
     let indent = indent(level);
-    let accessors = field_accessors(ty);
     out.push_str(&format!(
         "{}- {}: `{}`{}\n",
         indent,
@@ -66,7 +65,7 @@ fn render_type(ty: &JavaType, level: usize, out: &mut String) {
             "fields",
             ty.fields
                 .iter()
-                .map(|field| format_field(field, accessors_for_field(field, &accessors)))
+                .map(|field| format_field(field, &compact::field_accessor_labels(ty, field)))
                 .collect(),
             level + 1,
             out,
@@ -77,7 +76,7 @@ fn render_type(ty: &JavaType, level: usize, out: &mut String) {
             "constructors",
             ty.constructors
                 .iter()
-                .filter(|cons| !is_boring_no_arg_constructor(cons))
+                .filter(|cons| !compact::is_boring_no_arg_constructor(cons))
                 .map(format_constructor)
                 .collect(),
             level + 1,
@@ -89,7 +88,7 @@ fn render_type(ty: &JavaType, level: usize, out: &mut String) {
             "methods",
             ty.methods
                 .iter()
-                .filter(|method| !is_compacted_accessor(method, ty))
+                .filter(|method| !compact::is_compacted_accessor(method, ty))
                 .map(format_method)
                 .collect(),
             level + 1,
@@ -178,13 +177,13 @@ fn type_signature(ty: &JavaType) -> String {
     parts.join(" ")
 }
 
-fn format_field(field: &JavaField, accessors: FieldAccessors) -> String {
+fn format_field(field: &JavaField, accessor_labels: &[&str]) -> String {
     format!(
         "`{}{} {}{}`{}",
         prefix(&field.annotations, &field.modifiers, &[]),
         field.ty,
         field.name,
-        accessors_suffix(accessors),
+        accessors_suffix(accessor_labels),
         doc_suffix_text(&field.documentation)
     )
 }
@@ -327,154 +326,12 @@ fn join_display<T: fmt::Display>(items: &[T], separator: &str) -> String {
         .join(separator)
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct FieldAccessors {
-    getter: bool,
-    setter: bool,
-    add: bool,
-}
-
-fn field_accessors(ty: &JavaType) -> Vec<(&str, FieldAccessors)> {
-    ty.fields
-        .iter()
-        .map(|field| {
-            let mut accessors = FieldAccessors::default();
-            for method in &ty.methods {
-                match classify_accessor(method, field, &ty.name) {
-                    Some(AccessorKind::Getter) => accessors.getter = true,
-                    Some(AccessorKind::Setter) => accessors.setter = true,
-                    Some(AccessorKind::Add) => accessors.add = true,
-                    None => {}
-                }
-            }
-            (field.name.as_str(), accessors)
-        })
-        .collect()
-}
-
-fn accessors_for_field(field: &JavaField, accessors: &[(&str, FieldAccessors)]) -> FieldAccessors {
-    accessors
-        .iter()
-        .find_map(|(name, accessors)| (*name == field.name).then_some(*accessors))
-        .unwrap_or_default()
-}
-
-fn accessors_suffix(accessors: FieldAccessors) -> String {
-    let mut labels = Vec::new();
-    if accessors.getter {
-        labels.push("getter");
-    }
-    if accessors.setter {
-        labels.push("setter");
-    }
-    if accessors.add {
-        labels.push("add");
-    }
+fn accessors_suffix(labels: &[&str]) -> String {
     if labels.is_empty() {
         String::new()
     } else {
         format!(" [{}]", labels.join(","))
     }
-}
-
-fn is_compacted_accessor(method: &JavaMethod, ty: &JavaType) -> bool {
-    ty.fields
-        .iter()
-        .any(|field| classify_accessor(method, field, &ty.name).is_some())
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AccessorKind {
-    Getter,
-    Setter,
-    Add,
-}
-
-fn classify_accessor(
-    method: &JavaMethod,
-    field: &JavaField,
-    declaring_type: &str,
-) -> Option<AccessorKind> {
-    if !is_plain_method(method) {
-        return None;
-    }
-
-    let property = property_suffix(&field.name);
-    let field_ty = field.ty.to_string();
-
-    if method.name == format!("get{property}")
-        && method.args.is_empty()
-        && method
-            .return_type
-            .as_ref()
-            .is_some_and(|return_type| return_type.to_string() == field_ty)
-    {
-        return Some(AccessorKind::Getter);
-    }
-
-    if method.name == format!("is{property}")
-        && method.args.is_empty()
-        && is_boolean_type(&field_ty)
-        && method
-            .return_type
-            .as_ref()
-            .is_some_and(|return_type| is_boolean_type(&return_type.to_string()))
-    {
-        return Some(AccessorKind::Getter);
-    }
-
-    if method.name == format!("set{property}")
-        && method.args.len() == 1
-        && method.args[0].ty.to_string() == field_ty
-        && method.return_type.as_ref().is_some_and(|return_type| {
-            is_void_or_declaring_type(return_type.to_string(), declaring_type)
-        })
-    {
-        return Some(AccessorKind::Setter);
-    }
-
-    if method.name == format!("add{property}")
-        && method.args.len() == 1
-        && method.args[0].ty.to_string() == field_ty
-        && method.return_type.as_ref().is_some_and(|return_type| {
-            is_void_or_declaring_type(return_type.to_string(), declaring_type)
-        })
-    {
-        return Some(AccessorKind::Add);
-    }
-
-    None
-}
-
-fn is_plain_method(method: &JavaMethod) -> bool {
-    method.documentation.is_none()
-        && method.annotations.is_empty()
-        && method.type_parameters.is_empty()
-        && method.throws.is_empty()
-}
-
-fn is_boring_no_arg_constructor(cons: &JavaConstructor) -> bool {
-    cons.args.is_empty()
-        && cons.documentation.is_none()
-        && cons.annotations.is_empty()
-        && cons.type_parameters.is_empty()
-        && cons.throws.is_empty()
-}
-
-fn property_suffix(field_name: &str) -> String {
-    let mut chars = field_name.chars();
-    let Some(first) = chars.next() else {
-        return String::new();
-    };
-    first.to_uppercase().collect::<String>() + chars.as_str()
-}
-
-fn is_boolean_type(ty: &str) -> bool {
-    ty == "boolean" || ty == "Boolean"
-}
-
-fn is_void_or_declaring_type(return_type: String, declaring_type: &str) -> bool {
-    return_type == "void" || return_type == declaring_type
 }
 
 #[cfg(test)]

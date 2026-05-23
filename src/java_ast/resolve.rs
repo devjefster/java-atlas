@@ -276,6 +276,7 @@ fn collect_qualifier_segments(qualifier: &JavaTypeRef, out: &mut Vec<String>) {
 mod tests {
     use super::*;
     use crate::java_ast::parse_java_file;
+    use crate::test_fixtures::java;
 
     fn parse_all(sources: &[&str]) -> Vec<JavaFile> {
         sources
@@ -294,11 +295,7 @@ mod tests {
 
     #[test]
     fn resolves_explicit_import() {
-        let mut files = parse_all(&[
-            "package com.example.model; public class User {}",
-            "package com.example.service; import com.example.model.User; \
-             public class Service { private User user; }",
-        ]);
+        let mut files = parse_all(java::resolve::EXPLICIT_IMPORT);
         resolve_files(&mut files);
         let service = &files[1].types[0];
         assert_eq!(
@@ -309,10 +306,7 @@ mod tests {
 
     #[test]
     fn resolves_same_package_without_import() {
-        let mut files = parse_all(&[
-            "package x; public class A {}",
-            "package x; public class B { A a; }",
-        ]);
+        let mut files = parse_all(java::resolve::SAME_PACKAGE_WITHOUT_IMPORT);
         resolve_files(&mut files);
         let b = &files[1].types[0];
         assert_eq!(resolved(&b.fields[0].ty), Some("x.A"));
@@ -320,10 +314,7 @@ mod tests {
 
     #[test]
     fn resolves_wildcard_import() {
-        let mut files = parse_all(&[
-            "package com.foo; public class Foo {}",
-            "package other; import com.foo.*; public class Bar { Foo f; }",
-        ]);
+        let mut files = parse_all(java::resolve::WILDCARD_IMPORT);
         resolve_files(&mut files);
         let bar = &files[1].types[0];
         assert_eq!(resolved(&bar.fields[0].ty), Some("com.foo.Foo"));
@@ -331,10 +322,7 @@ mod tests {
 
     #[test]
     fn resolves_nested_type_via_outer() {
-        let mut files = parse_all(&[
-            "package x; public class Outer { public static class Inner {} }",
-            "package x; public class B { Outer.Inner field; }",
-        ]);
+        let mut files = parse_all(java::resolve::NESTED_TYPE_VIA_OUTER);
         resolve_files(&mut files);
         let b = &files[1].types[0];
         assert_eq!(resolved(&b.fields[0].ty), Some("x.Outer.Inner"));
@@ -342,10 +330,7 @@ mod tests {
 
     #[test]
     fn resolves_fully_qualified_inline_use() {
-        let mut files = parse_all(&[
-            "package com.example; public class Thing {}",
-            "package other; public class B { com.example.Thing t; }",
-        ]);
+        let mut files = parse_all(java::resolve::FULLY_QUALIFIED_INLINE_USE);
         resolve_files(&mut files);
         let b = &files[1].types[0];
         assert_eq!(resolved(&b.fields[0].ty), Some("com.example.Thing"));
@@ -353,7 +338,7 @@ mod tests {
 
     #[test]
     fn external_types_stay_unresolved() {
-        let mut files = parse_all(&["package a; public class A { String s; }"]);
+        let mut files = parse_all(java::resolve::EXTERNAL_TYPES);
         resolve_files(&mut files);
         let a = &files[0].types[0];
         assert_eq!(resolved(&a.fields[0].ty), None);
@@ -361,11 +346,7 @@ mod tests {
 
     #[test]
     fn generic_args_resolve_independently_of_raw_type() {
-        let mut files = parse_all(&[
-            "package a; public class User {}",
-            "package b; import a.User; import java.util.List; \
-             public class Holder { List<User> users; }",
-        ]);
+        let mut files = parse_all(java::resolve::GENERIC_ARGS);
         resolve_files(&mut files);
         let holder = &files[1].types[0];
         let field_ty = &holder.fields[0].ty;
@@ -382,10 +363,7 @@ mod tests {
 
     #[test]
     fn array_element_is_resolved() {
-        let mut files = parse_all(&[
-            "package a; public class User {}",
-            "package b; import a.User; public class B { User[] users; }",
-        ]);
+        let mut files = parse_all(java::resolve::ARRAY_ELEMENT);
         resolve_files(&mut files);
         let b = &files[1].types[0];
         let JavaTypeRef::Array { element, .. } = &b.fields[0].ty else {
@@ -396,11 +374,7 @@ mod tests {
 
     #[test]
     fn wildcard_bound_is_resolved() {
-        let mut files = parse_all(&[
-            "package a; public class Animal {}",
-            "package b; import a.Animal; import java.util.List; \
-             public class B { List<? extends Animal> list; }",
-        ]);
+        let mut files = parse_all(java::resolve::WILDCARD_BOUND);
         resolve_files(&mut files);
         let b = &files[1].types[0];
         let JavaTypeRef::Reference(list_ref) = &b.fields[0].ty else {
@@ -419,7 +393,7 @@ mod tests {
 
     #[test]
     fn same_file_reference_resolves() {
-        let mut files = parse_all(&["package x; public class Foo { Bar b; } class Bar {}"]);
+        let mut files = parse_all(java::resolve::SAME_FILE_REFERENCE);
         resolve_files(&mut files);
         let foo = &files[0].types[0];
         assert_eq!(resolved(&foo.fields[0].ty), Some("x.Bar"));

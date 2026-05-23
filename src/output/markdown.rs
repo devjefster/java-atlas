@@ -482,43 +482,13 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::java_ast::parse_java_file;
+    use crate::test_fixtures::java;
 
     use super::super::{FileOutput, Format, render as dispatch_render};
 
     #[test]
     fn full_markdown_contains_expected_sections() {
-        let source = r#"
-            package com.example;
-
-            import java.util.Optional;
-
-            @Service
-            public class UserService<T extends AutoCloseable> {
-                @Inject
-                private final UserRepository repository;
-
-                @Autowired
-                public UserService(UserRepository repository) throws ConfigurationException {
-                    this.repository = repository;
-                }
-
-                @Deprecated
-                public <E extends Exception> Optional<User> findById(@NotNull Long id) throws E {
-                    return Optional.empty();
-                }
-
-                public static class Inner {
-                    private int value;
-                }
-            }
-
-            public enum Status {
-                ACTIVE,
-                INACTIVE
-            }
-        "#;
-
-        let ast = parse_java_file(source).expect("parse");
+        let ast = parse_java_file(java::output::MARKDOWN_FULL_USER_SERVICE).expect("parse");
         let path = PathBuf::from("src/UserService.java");
         let files = vec![FileOutput {
             path: &path,
@@ -552,10 +522,8 @@ mod tests {
 
     #[test]
     fn multiple_files_share_one_atlas_heading() {
-        let src_a = "package a; public class A {}";
-        let src_b = "package b; public class B {}";
-        let ast_a = parse_java_file(src_a).expect("parse a");
-        let ast_b = parse_java_file(src_b).expect("parse b");
+        let ast_a = parse_java_file(java::output::MARKDOWN_MULTI_FILE_A).expect("parse a");
+        let ast_b = parse_java_file(java::output::MARKDOWN_MULTI_FILE_B).expect("parse b");
         let path_a = PathBuf::from("src/A.java");
         let path_b = PathBuf::from("src/B.java");
         let files = vec![
@@ -581,28 +549,7 @@ mod tests {
 
     #[test]
     fn markdown_renders_javadocs() {
-        let source = r#"
-            /** Service docs. */
-            public class UserService {
-                /**
-                 * Repository docs.
-                 * @see UserRepository
-                 */
-                private final UserRepository repository;
-
-                /**
-                 * Finds a user.
-                 *
-                 * @param id user id
-                 * @return optional user
-                 */
-                public Optional<User> findById(Long id) {
-                    return Optional.empty();
-                }
-            }
-        "#;
-
-        let ast = parse_java_file(source).expect("parse");
+        let ast = parse_java_file(java::output::MARKDOWN_JAVADOCS).expect("parse");
         let path = PathBuf::from("src/UserService.java");
         let files = vec![FileOutput {
             path: &path,
@@ -620,23 +567,7 @@ mod tests {
 
     #[test]
     fn markdown_compacts_standard_field_accessors() {
-        let source = r#"
-            package com.example;
-
-            public class UserSendCodeRequest {
-                private String to;
-                private String channel;
-                private boolean active;
-
-                public String getTo() { return to; }
-                public UserSendCodeRequest setTo(String to) { this.to = to; return this; }
-                public String getChannel() { return channel; }
-                public void setChannel(String channel) { this.channel = channel; }
-                public boolean isActive() { return active; }
-            }
-        "#;
-
-        let ast = parse_java_file(source).expect("parse");
+        let ast = parse_java_file(java::output::MARKDOWN_STANDARD_FIELD_ACCESSORS).expect("parse");
         let path = PathBuf::from("src/UserSendCodeRequest.java");
         let files = vec![FileOutput {
             path: &path,
@@ -657,23 +588,8 @@ mod tests {
 
     #[test]
     fn markdown_keeps_non_plain_or_non_matching_accessor_like_methods() {
-        let source = r#"
-            package com.example;
-
-            public class UserService {
-                private String name;
-                private List<String> items;
-
-                /** Name docs. */
-                public String getName() { return name; }
-                @Deprecated
-                public void setName(String name) { this.name = name; }
-                public String getOther() { return "other"; }
-                public UserService addItems(List<String> items) { this.items = items; return this; }
-            }
-        "#;
-
-        let ast = parse_java_file(source).expect("parse");
+        let ast =
+            parse_java_file(java::output::MARKDOWN_NON_MATCHING_ACCESSOR_METHODS).expect("parse");
         let path = PathBuf::from("src/UserService.java");
         let files = vec![FileOutput {
             path: &path,
@@ -691,21 +607,8 @@ mod tests {
 
     #[test]
     fn markdown_omits_only_boring_no_arg_constructors() {
-        let source = r#"
-            package com.example;
-
-            public class PlainDto {
-                public PlainDto() {}
-                public PlainDto(String name) {}
-            }
-
-            public class ConfiguredDto {
-                @Inject
-                public ConfiguredDto() {}
-            }
-        "#;
-
-        let ast = parse_java_file(source).expect("parse");
+        let ast =
+            parse_java_file(java::output::MARKDOWN_BORING_NO_ARG_CONSTRUCTORS).expect("parse");
         let path = PathBuf::from("src/PlainDto.java");
         let files = vec![FileOutput {
             path: &path,

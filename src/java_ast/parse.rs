@@ -732,37 +732,14 @@ mod tests {
         JavaAnnotationArgument, JavaAnnotationValue, JavaPrimitiveType, JavaTypeArgument,
         JavaTypeRef, JavaWildcardBound,
     };
+    use crate::test_fixtures::java;
 
     use super::{TypeKind, parse_java_file};
 
     #[test]
     fn parses_outer_type_without_promoting_nested_type() {
-        let source = r#"
-            package com.example;
-
-            public class UserService {
-                private final UserRepository repository;
-
-                public UserService(UserRepository repository) {
-                    this.repository = repository;
-                }
-
-                public User findById(Long id) {
-                    return null;
-                }
-
-                public static class Inner {
-                    private int value;
-                }
-            }
-
-            public enum Status {
-                ACTIVE,
-                INACTIVE
-            }
-        "#;
-
-        let file = parse_java_file(source).expect("source should parse");
+        let file =
+            parse_java_file(java::parse::OUTER_TYPE_WITH_NESTED_TYPE).expect("source should parse");
 
         assert_eq!(file.types.len(), 2);
         assert_eq!(file.types[0].name, "UserService");
@@ -781,26 +758,8 @@ mod tests {
 
     #[test]
     fn parses_annotations_separately_from_modifiers() {
-        let source = r#"
-            @Entity
-            public record User(
-                @NotNull String name,
-                @Size(max = 20) String... tags
-            ) {
-                @Inject
-                public User {}
-
-                @Column(name = "email")
-                private final String email;
-
-                @Deprecated
-                public String email(@NotNull String fallback) {
-                    return email;
-                }
-            }
-        "#;
-
-        let file = parse_java_file(source).expect("source should parse");
+        let file = parse_java_file(java::parse::ANNOTATIONS_SEPARATE_FROM_MODIFIERS)
+            .expect("source should parse");
         let ty = &file.types[0];
 
         assert_eq!(ty.kind, TypeKind::Record);
@@ -835,14 +794,8 @@ mod tests {
 
     #[test]
     fn parses_annotation_element_annotations() {
-        let source = r#"
-            public @interface Labels {
-                @Deprecated
-                String value();
-            }
-        "#;
-
-        let file = parse_java_file(source).expect("source should parse");
+        let file = parse_java_file(java::parse::ANNOTATION_ELEMENT_ANNOTATIONS)
+            .expect("source should parse");
         let element = &file.types[0].annotation_elements[0];
 
         assert_eq!(file.types[0].kind, TypeKind::Annotation);
@@ -852,43 +805,7 @@ mod tests {
 
     #[test]
     fn parses_javadocs_on_declarations() {
-        let source = r#"
-            /**
-             * Service for users.
-             *
-             * @since 1.0
-             */
-            public class UserService {
-                /** Repository storage. */
-                private final UserRepository repository;
-
-                /**
-                 * Creates the service.
-                 *
-                 * @param repository storage dependency
-                 */
-                public UserService(UserRepository repository) {}
-
-                /**
-                 * Finds a user.
-                 * Continues the description.
-                 *
-                 * @param id user id
-                 *   continued tag text
-                 * @return optional user
-                 */
-                public Optional<User> findById(Long id) {
-                    return Optional.empty();
-                }
-            }
-
-            public @interface Labels {
-                /** Label value. */
-                String value();
-            }
-        "#;
-
-        let file = parse_java_file(source).expect("source should parse");
+        let file = parse_java_file(java::parse::JAVADOC_DECLARATIONS).expect("source should parse");
         let service = &file.types[0];
         let service_doc = service.documentation.as_ref().expect("type javadoc");
         assert_eq!(service_doc.description, "Service for users.");
@@ -937,20 +854,8 @@ mod tests {
 
     #[test]
     fn ignores_non_javadoc_and_non_leading_comments() {
-        let source = r#"
-            /* Ordinary block comment. */
-            public class Ordinary {
-                /* Ordinary field comment. */
-                private int x;
-
-                /** This documents the field, not the method. */
-                private int y;
-
-                public void run() {}
-            }
-        "#;
-
-        let file = parse_java_file(source).expect("source should parse");
+        let file = parse_java_file(java::parse::NON_JAVADOC_AND_NON_LEADING_COMMENTS)
+            .expect("source should parse");
         let ty = &file.types[0];
 
         assert!(ty.documentation.is_none());
@@ -961,19 +866,8 @@ mod tests {
 
     #[test]
     fn parses_structured_type_references() {
-        let source = r#"
-            import java.util.List;
-            import java.util.Map;
-
-            public class Types extends Base<String> implements Handler<Map<String, List<Integer[]>>> {
-                private List<? extends Number>[] numbers;
-                private String legacy[];
-                public void accept(List<? super User> users, @Valid String[] names) {}
-                public String legacyReturn()[];
-            }
-        "#;
-
-        let file = parse_java_file(source).expect("source should parse");
+        let file =
+            parse_java_file(java::parse::STRUCTURED_TYPE_REFERENCES).expect("source should parse");
         let ty = &file.types[0];
 
         assert_eq!(ty.extends[0].to_string(), "Base<String>");
@@ -1006,23 +900,8 @@ mod tests {
 
     #[test]
     fn parses_throws_type_parameters_and_nested_generics() {
-        let source = r#"
-            import java.io.IOException;
-            import java.io.Serializable;
-            import java.util.List;
-            import java.util.Map;
-
-            public class Types<T extends Serializable & Comparable<T>> {
-                public <C extends Config & AutoCloseable> Types() throws ConfigurationException {}
-
-                public <E extends Exception> Map.Entry<String, List<User.Id>> read()
-                        throws IOException, Outer.InnerException {
-                    return null;
-                }
-            }
-        "#;
-
-        let file = parse_java_file(source).expect("source should parse");
+        let file = parse_java_file(java::parse::THROWS_TYPE_PARAMETERS_AND_NESTED_GENERICS)
+            .expect("source should parse");
         let ty = &file.types[0];
 
         assert_eq!(
@@ -1065,16 +944,8 @@ mod tests {
 
     #[test]
     fn parses_structured_annotation_values_and_defaults() {
-        let source = r#"
-            @Column(name = "email", nullable = false, roles = {"ADMIN", "USER"}, nested = @Inner(count = 2), type = String.class)
-            public @interface Labels {
-                @Deprecated
-                String value() default "user";
-                int count() default 1 + 2;
-            }
-        "#;
-
-        let file = parse_java_file(source).expect("source should parse");
+        let file = parse_java_file(java::parse::STRUCTURED_ANNOTATION_VALUES_AND_DEFAULTS)
+            .expect("source should parse");
         let annotation = &file.types[0].annotations[0];
         assert_eq!(annotation.name, "Column");
         assert_eq!(

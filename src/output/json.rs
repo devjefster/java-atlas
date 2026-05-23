@@ -29,19 +29,13 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::java_ast::{parse_java_file, resolve_files};
+    use crate::test_fixtures::java;
 
     use super::super::{FileOutput, Format, render as dispatch_render};
 
     #[test]
     fn json_round_trips_and_contains_expected_keys() {
-        let source = r#"
-            package com.example;
-            public class Foo {
-                private int x;
-            }
-        "#;
-
-        let ast = parse_java_file(source).expect("parse");
+        let ast = parse_java_file(java::output::ROUND_TRIP_FOO).expect("parse");
         let path = PathBuf::from("src/Foo.java");
         let files = vec![FileOutput {
             path: &path,
@@ -67,14 +61,10 @@ mod tests {
 
     #[test]
     fn json_exposes_resolved_fqn_across_files() {
-        let mut asts = vec![
-            parse_java_file("package com.example.model; public class User {}").expect("parse"),
-            parse_java_file(
-                "package com.example.service; import com.example.model.User; \
-                 public class Service { private User user; }",
-            )
-            .expect("parse"),
-        ];
+        let mut asts = java::output::RESOLVED_FQN
+            .iter()
+            .map(|source| parse_java_file(*source).expect("parse"))
+            .collect::<Vec<_>>();
         resolve_files(&mut asts);
 
         let paths = [
@@ -96,15 +86,7 @@ mod tests {
 
     #[test]
     fn json_exposes_javadocs() {
-        let source = r#"
-            /**
-             * User service.
-             * @since 1.0
-             */
-            public class UserService {}
-        "#;
-
-        let ast = parse_java_file(source).expect("parse");
+        let ast = parse_java_file(java::output::JAVADOC_USER_SERVICE).expect("parse");
         let path = PathBuf::from("src/UserService.java");
         let files = vec![FileOutput {
             path: &path,

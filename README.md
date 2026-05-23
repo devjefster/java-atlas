@@ -2,8 +2,6 @@
 
 A small command-line tool that walks a Java codebase and prints a Markdown summary of every `.java` file it finds: package, imports, and the shape of each declared type (class, interface, enum, record, annotation) with its modifiers, supertypes, fields, constructors, methods, and kind-specific members.
 
-> The Cargo package is `java-atlas`; task context sometimes refers to the tool as `java-lens`. Same binary.
-
 ## Install
 
 Requires a recent stable Rust toolchain (2024 edition).

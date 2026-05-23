@@ -1,0 +1,11 @@
+[package]
+name = "java-atlas"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+pulldown-cmark = "0.13.4"
+tree-sitter = "0.26.8"
+tree-sitter-java = "0.23.5"
+walkdir = "2.5.0"

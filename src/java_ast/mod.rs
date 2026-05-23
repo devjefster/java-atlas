@@ -4,6 +4,7 @@ mod error;
 mod helpers;
 mod model;
 mod parse;
+mod resolve;
 
 pub use error::JavaAstError;
 pub use model::{
@@ -13,3 +14,4 @@ pub use model::{
     JavaWildcardBound, TypeKind,
 };
 pub use parse::parse_java_file;
+pub use resolve::resolve_files;

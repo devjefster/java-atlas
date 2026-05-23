@@ -34,7 +34,7 @@ struct Entry<'a> {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::java_ast::parse_java_file;
+    use crate::java_ast::{parse_java_file, resolve_files};
 
     use super::super::{FileOutput, Format, render as dispatch_render};
 
@@ -65,5 +65,37 @@ mod tests {
         assert_eq!(types.len(), 1);
         assert_eq!(types[0]["kind"].as_str(), Some("Class"));
         assert_eq!(types[0]["name"].as_str(), Some("Foo"));
+    }
+
+    #[test]
+    fn toml_exposes_resolved_fqn_across_files() {
+        let mut asts = vec![
+            parse_java_file("package com.example.model; public class User {}").expect("parse"),
+            parse_java_file(
+                "package com.example.service; import com.example.model.User; \
+                 public class Service { private User user; }",
+            )
+            .expect("parse"),
+        ];
+        resolve_files(&mut asts);
+
+        let paths = [
+            PathBuf::from("src/User.java"),
+            PathBuf::from("src/Service.java"),
+        ];
+        let files: Vec<FileOutput<'_>> = paths
+            .iter()
+            .zip(asts.iter())
+            .map(|(p, a)| FileOutput { path: p, ast: a })
+            .collect();
+        let rendered = dispatch_render(&files, Format::Toml).expect("render");
+
+        let parsed: ::toml::Value = ::toml::from_str(&rendered).expect("parse toml");
+        let service_field_ty = &parsed["files"][1]["ast"]["types"][0]["fields"][0]["ty"]["value"];
+        assert_eq!(service_field_ty["name"].as_str(), Some("User"));
+        assert_eq!(
+            service_field_ty["resolved_fqn"].as_str(),
+            Some("com.example.model.User")
+        );
     }
 }

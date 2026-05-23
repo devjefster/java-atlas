@@ -28,7 +28,7 @@ struct Entry<'a> {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::java_ast::parse_java_file;
+    use crate::java_ast::{parse_java_file, resolve_files};
 
     use super::super::{FileOutput, Format, render as dispatch_render};
 
@@ -63,5 +63,34 @@ mod tests {
         assert_eq!(field["name"], "x");
         assert_eq!(field["ty"]["kind"], "Primitive");
         assert_eq!(field["ty"]["value"], "int");
+    }
+
+    #[test]
+    fn json_exposes_resolved_fqn_across_files() {
+        let mut asts = vec![
+            parse_java_file("package com.example.model; public class User {}").expect("parse"),
+            parse_java_file(
+                "package com.example.service; import com.example.model.User; \
+                 public class Service { private User user; }",
+            )
+            .expect("parse"),
+        ];
+        resolve_files(&mut asts);
+
+        let paths = [
+            PathBuf::from("src/User.java"),
+            PathBuf::from("src/Service.java"),
+        ];
+        let files: Vec<FileOutput<'_>> = paths
+            .iter()
+            .zip(asts.iter())
+            .map(|(p, a)| FileOutput { path: p, ast: a })
+            .collect();
+        let json = dispatch_render(&files, Format::Json).expect("render");
+
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse json");
+        let service_field_ty = &parsed[1]["ast"]["types"][0]["fields"][0]["ty"]["value"];
+        assert_eq!(service_field_ty["name"], "User");
+        assert_eq!(service_field_ty["resolved_fqn"], "com.example.model.User");
     }
 }

@@ -179,6 +179,7 @@ pub(super) fn parse_type_ref(node: Node, source: &str) -> JavaTypeRef {
             qualifier: None,
             name: text,
             args: Vec::new(),
+            resolved_fqn: None,
         }),
         "scoped_type_identifier" | "scoped_identifier" => parse_scoped_reference_type(node, source)
             .unwrap_or_else(|| {
@@ -186,6 +187,7 @@ pub(super) fn parse_type_ref(node: Node, source: &str) -> JavaTypeRef {
                     qualifier: None,
                     name: text,
                     args: Vec::new(),
+                    resolved_fqn: None,
                 })
             }),
         "generic_type" => parse_generic_type(node, source),
@@ -247,6 +249,7 @@ fn parse_scoped_reference_type(node: Node, source: &str) -> Option<JavaTypeRef> 
         qualifier,
         name: node_text(*last, source),
         args: Vec::new(),
+        resolved_fqn: None,
     });
 
     if annotations.is_empty() {
@@ -354,6 +357,7 @@ fn parse_generic_type(node: Node, source: &str) -> JavaTypeRef {
         qualifier,
         name: name.unwrap_or_else(|| node_text(node, source)),
         args,
+        resolved_fqn: None,
     })
 }
 

@@ -87,6 +87,7 @@ pub struct JavaReferenceType {
     pub qualifier: Option<Box<JavaTypeRef>>,
     pub name: String,
     pub args: Vec<JavaTypeArgument>,
+    pub resolved_fqn: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

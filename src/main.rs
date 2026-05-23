@@ -1,16 +1,40 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::fs;
 use std::path::PathBuf;
 use walkdir::WalkDir;
+
+use java_atlas::java_ast::{JavaFile, parse_java_file};
+use java_atlas::output::{self, FileOutput, Format};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Codebase root directory to scan
     path: Option<PathBuf>,
+
+    /// Output format
+    #[arg(short = 'f', long, value_enum, default_value_t = OutputFormat::Markdown)]
+    format: OutputFormat,
 }
 
-/// Walks the selected codebase root and prints Markdown for each Java file.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum OutputFormat {
+    Markdown,
+    Json,
+    Toml,
+}
+
+impl From<OutputFormat> for Format {
+    fn from(value: OutputFormat) -> Self {
+        match value {
+            OutputFormat::Markdown => Format::Markdown,
+            OutputFormat::Json => Format::Json,
+            OutputFormat::Toml => Format::Toml,
+        }
+    }
+}
+
+/// Walks the selected codebase root and prints the parsed files in the chosen format.
 fn main() {
     let args = Args::parse();
 
@@ -38,20 +62,34 @@ fn main() {
         return;
     }
 
+    let mut parsed: Vec<(PathBuf, JavaFile)> = Vec::with_capacity(files_to_parse.len());
     for file_path in files_to_parse {
         match fs::read_to_string(&file_path) {
-            Ok(source) => match java_atlas::java_ast::extract_markdown(&source) {
-                Ok(markdown) => {
-                    println!("--- File: {:?} ---", file_path);
-                    println!("{}", markdown);
-                }
-                Err(e) => {
-                    eprintln!("Error parsing {:?}: {}", file_path, e);
-                }
+            Ok(source) => match parse_java_file(&source) {
+                Ok(ast) => parsed.push((file_path, ast)),
+                Err(e) => eprintln!("Error parsing {:?}: {}", file_path, e),
             },
-            Err(e) => {
-                eprintln!("Error reading {:?}: {}", file_path, e);
-            }
+            Err(e) => eprintln!("Error reading {:?}: {}", file_path, e),
+        }
+    }
+
+    if parsed.is_empty() {
+        std::process::exit(1);
+    }
+
+    let outputs: Vec<FileOutput<'_>> = parsed
+        .iter()
+        .map(|(path, ast)| FileOutput {
+            path: path.as_path(),
+            ast,
+        })
+        .collect();
+
+    match output::render(&outputs, args.format.into()) {
+        Ok(rendered) => println!("{}", rendered),
+        Err(e) => {
+            eprintln!("Error rendering output: {}", e);
+            std::process::exit(1);
         }
     }
 }

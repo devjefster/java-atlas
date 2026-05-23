@@ -1,8 +1,9 @@
 # java-atlas
 
-A small command-line tool that walks a Java codebase and prints a Markdown summary of every `.java` file it finds:
-package, imports, and the shape of each declared type (class, interface, enum, record, annotation) with its annotations,
-modifiers, supertypes, fields, constructors, methods, and kind-specific members.
+A small command-line tool that walks a Java codebase and prints a summary of every `.java` file it finds — package,
+imports, and the shape of each declared type (class, interface, enum, record, annotation) with its annotations,
+modifiers, supertypes, fields, constructors, methods, and kind-specific members. Output is available in Markdown
+(default), JSON, or TOML.
 
 ## Install
 
@@ -22,19 +23,21 @@ cargo run -- [path]
 ## Usage
 
 ```bash
-java-atlas [path]
+java-atlas [path] [--format markdown|json|toml]
 ```
 
 - `path` is the codebase root directory to scan. If omitted, the current directory is used.
 - The walker recurses through subdirectories, picks up every file with a `.java` extension, and skips any path component
   named `target`.
 - If `path` is not a directory the tool prints an error and exits non-zero.
-
-For each Java file, the rendered Markdown is printed to stdout, preceded by a `--- File: "<path>" ---` header. Redirect
-to a file to capture the output:
+- `--format` (or `-f`) selects the output format; defaults to `markdown`. JSON emits a single pretty-printed array of
+  `{ path, ast }` entries; TOML emits a single document with a `[[files]]` table array. Redirect to a file to capture
+  the output:
 
 ```bash
 java-atlas ./my-service/src/main/java > atlas.md
+java-atlas ./my-service/src/main/java --format json > atlas.json
+java-atlas ./my-service/src/main/java --format toml > atlas.toml
 ```
 
 ## Example
@@ -121,13 +124,15 @@ text.
 
 The crate is a small library with a thin CLI on top:
 
-- `src/main.rs` — CLI: argument parsing, directory walking, reading, printing.
-- `src/lib.rs` — declares the public `java_ast` and `markdown` modules.
-- `src/java_ast/` — Tree-sitter parsing and Markdown rendering. Public entry is
-  `extract_markdown(source: &str) -> Result<String, JavaAstError>`, which runs `parse_java_file` → `render_markdown` →
-  `markdown::validate_markdown` and returns the validated output.
-- `src/markdown.rs` — generic Markdown validation built on `pulldown-cmark`, used to assert that the rendered output has
-  a well-formed heading structure before it leaves the library.
+- `src/main.rs` — CLI: argument parsing (`--format`), directory walking, reading, printing.
+- `src/lib.rs` — declares the public `java_ast`, `markdown`, and `output` modules.
+- `src/java_ast/` — Tree-sitter parsing and the data model. Public entry is
+  `parse_java_file(source: &str) -> Result<JavaFile, JavaAstError>`. All model types derive `Serialize` so the same AST
+  drives every output format.
+- `src/output/` — multi-format rendering. Public entry is
+  `render(&[FileOutput], Format) -> Result<String, OutputError>`. Submodules: `markdown`, `json`, `toml`.
+- `src/markdown.rs` — generic Markdown validation built on `pulldown-cmark`, used by `output::markdown` to assert that
+  the rendered output has a well-formed heading structure before it leaves the library.
 
 See [CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md) for the longer architectural notes.
 

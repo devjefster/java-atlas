@@ -2,7 +2,9 @@
 
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum TypeKind {
     Class,
     Interface,
@@ -11,7 +13,8 @@ pub enum TypeKind {
     Annotation,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum JavaPrimitiveType {
     Boolean,
     Byte,
@@ -55,7 +58,8 @@ impl fmt::Display for JavaPrimitiveType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "value")]
 pub enum JavaTypeRef {
     Primitive(JavaPrimitiveType),
     Void,
@@ -78,39 +82,42 @@ pub enum JavaTypeRef {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct JavaReferenceType {
     pub qualifier: Option<Box<JavaTypeRef>>,
     pub name: String,
     pub args: Vec<JavaTypeArgument>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct JavaTypeParameter {
     pub annotations: Vec<JavaAnnotation>,
     pub name: String,
     pub bounds: Vec<JavaTypeRef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "value")]
 pub enum JavaTypeArgument {
     Type(JavaTypeRef),
     Wildcard(JavaTypeRef),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "value")]
 pub enum JavaWildcardBound {
     Extends(Box<JavaTypeRef>),
     Super(Box<JavaTypeRef>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct JavaAnnotation {
     pub name: String,
     pub arguments: Vec<JavaAnnotationArgument>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "value")]
 pub enum JavaAnnotationArgument {
     Default(JavaAnnotationValue),
     Named {
@@ -119,7 +126,8 @@ pub enum JavaAnnotationArgument {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "value")]
 pub enum JavaAnnotationValue {
     String(String),
     Char(String),
@@ -285,7 +293,7 @@ fn write_annotations_prefix(
     Ok(())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JavaArgument {
     pub annotations: Vec<JavaAnnotation>,
     pub ty: JavaTypeRef,
@@ -293,7 +301,7 @@ pub struct JavaArgument {
     pub varargs: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JavaField {
     pub annotations: Vec<JavaAnnotation>,
     pub modifiers: Vec<String>,
@@ -302,7 +310,7 @@ pub struct JavaField {
     pub range: (usize, usize),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JavaConstructor {
     pub annotations: Vec<JavaAnnotation>,
     pub modifiers: Vec<String>,
@@ -313,7 +321,7 @@ pub struct JavaConstructor {
     pub range: (usize, usize),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JavaMethod {
     pub annotations: Vec<JavaAnnotation>,
     pub modifiers: Vec<String>,
@@ -325,7 +333,7 @@ pub struct JavaMethod {
     pub range: (usize, usize),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JavaAnnotationElement {
     pub annotations: Vec<JavaAnnotation>,
     pub name: String,
@@ -334,7 +342,7 @@ pub struct JavaAnnotationElement {
     pub range: (usize, usize),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JavaType {
     pub kind: TypeKind,
     pub name: String,
@@ -354,7 +362,7 @@ pub struct JavaType {
     pub body_range: Option<(usize, usize)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JavaFile {
     pub package: Option<String>,
     pub imports: Vec<String>,

@@ -4,7 +4,6 @@ mod compact;
 mod json;
 mod jsonl;
 mod markdown;
-mod toml;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -18,7 +17,6 @@ pub enum Format {
     Markdown,
     Json,
     Jsonl,
-    Toml,
 }
 
 /// One parsed Java file paired with its source path, ready to be rendered.
@@ -39,7 +37,6 @@ pub struct JsonlPackage {
 pub enum OutputError {
     Markdown(MarkdownError),
     Json(serde_json::Error),
-    Toml(::toml::ser::Error),
 }
 
 impl fmt::Display for OutputError {
@@ -47,7 +44,6 @@ impl fmt::Display for OutputError {
         match self {
             OutputError::Markdown(e) => write!(f, "Markdown render error: {}", e),
             OutputError::Json(e) => write!(f, "JSON render error: {}", e),
-            OutputError::Toml(e) => write!(f, "TOML render error: {}", e),
         }
     }
 }
@@ -66,12 +62,6 @@ impl From<serde_json::Error> for OutputError {
     }
 }
 
-impl From<::toml::ser::Error> for OutputError {
-    fn from(e: ::toml::ser::Error) -> Self {
-        OutputError::Toml(e)
-    }
-}
-
 /// Render a set of parsed files into a single string in the requested format.
 ///
 /// Aggregation rules per format:
@@ -80,16 +70,11 @@ impl From<::toml::ser::Error> for OutputError {
 /// - JSON: emits a single array `[{ "path": ..., "ast": ... }, ...]`.
 /// - JSONL: emits one compact file record per line, grouped by package when
 ///   written through [`render_jsonl_packages`].
-/// - TOML: emits one compact document with `[[packages]]` sections and
-///   `[[packages.files]]` entries, skips empty collection fields, folds
-///   deterministic accessors/default constructors, and renders compact arrays
-///   inline where useful.
 pub fn render(files: &[FileOutput<'_>], format: Format) -> Result<String, OutputError> {
     match format {
         Format::Markdown => markdown::render(files),
         Format::Json => json::render(files),
         Format::Jsonl => jsonl::render(files),
-        Format::Toml => toml::render(files),
     }
 }
 

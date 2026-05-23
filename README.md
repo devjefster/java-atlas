@@ -2,7 +2,7 @@
 
 A small command-line tool that walks a Java codebase and builds a compact atlas of every `.java` file it finds. Markdown
 output is compact by default for developer scanning and AI context usage; package-scoped JSONL is optimized for
-searchable/sliceable agent workflows; JSON and TOML remain available as structured exports.
+searchable/sliceable agent workflows; full JSON remains available as a structured export.
 
 ## Install
 
@@ -23,7 +23,7 @@ cargo run -- [path]
 
 ```bash
 java-atlas init [path] [--out-dir .atlas]
-java-atlas [path] [--format markdown|json|jsonl|toml]
+java-atlas [path] [--format markdown|json|jsonl]
 ```
 
 - `init` writes the recommended working set into `.atlas`: `atlas.md` plus package-scoped JSONL shards under
@@ -35,16 +35,14 @@ java-atlas [path] [--format markdown|json|jsonl|toml]
   named `target`.
 - If `path` is not a directory the tool prints an error and exits non-zero.
 - `--format` (or `-f`) selects the direct output format; defaults to `markdown`. JSON emits a single pretty-printed
-  array of `{ path, ast }` entries; JSONL emits one compact source-file record per line; TOML emits package-grouped
-  `[[packages]]` sections with compact file entries and omitted empty collections. Redirect direct output to a file to
-  capture it:
+  array of `{ path, ast }` entries; JSONL emits one compact source-file record per line. Redirect direct output to a
+  file to capture it:
 
 ```bash
 java-atlas init ./my-service/src/main/java
 java-atlas ./my-service/src/main/java > atlas.md
 java-atlas ./my-service/src/main/java --format json > atlas.json
 java-atlas ./my-service/src/main/java --format jsonl > atlas.jsonl
-java-atlas ./my-service/src/main/java --format toml > atlas.toml
 ```
 
 ## Example
@@ -97,7 +95,7 @@ Markdown groups files by package, omits imports and verbose Javadoc tags, and us
 codebase summaries practical. Standard field accessors are folded into field signatures as `[getter]`, `[setter]`, or
 `[add]`, and plain no-argument constructors are omitted. Leading Javadocs on types, fields, constructors, methods, and
 annotation elements are captured as structured documentation; Markdown renders their descriptions inline, while
-JSON/TOML retain descriptions and tags. Declaration and parameter annotations are rendered separately from Java keyword
+JSON/JSONL retain descriptions and tags. Declaration and parameter annotations are rendered separately from Java keyword
 modifiers.
 
 `java-atlas init` is the recommended workflow for AI-assisted coding. It writes `.atlas/atlas.md` for human orientation
@@ -111,16 +109,8 @@ references, generics, arrays, wildcards, and type-use annotations. Javadocs expo
 Annotations expose their name plus default or named arguments, including arrays, nested annotations, class literals,
 primitive literals, references, and constant-expression text.
 
-TOML output keeps the structured AST shape but groups files under `[[packages]]`, lists package files under
-`[[packages.files]]`, shortens file paths relative to the package directory, and does not repeat the package name inside
-each file. If a collection key is not present, consumers should treat it as empty; for example omitted
-`type_parameters`, `extends`, `implements`, `constructors`, `enum_constants`, `record_components`, `annotation_elements`,
-and `nested_types` fields are equivalent to `[]`. TOML also folds deterministic JavaBean-style accessors into field
-`accessors` arrays, renders those accessors inline, and omits plain no-argument constructors. Source `range` and
-`body_range` offsets remain present, rendered inline as two-number arrays.
-
-TOML is kept for consumers that want it, but it is not the most efficient format for large codebases. Prefer Markdown for
-overview and package JSONL for searchable agent context.
+JSONL omits empty collections and null optional fields. If an expected collection key is not present in JSONL, consumers
+should treat it as empty. Full JSON keeps the raw structured AST for tooling that needs complete parser output.
 
 ## Scope
 
@@ -139,7 +129,7 @@ The crate is a small library with a thin CLI on top:
   `parse_java_file(source: &str) -> Result<JavaFile, JavaAstError>`. All model types derive `Serialize` so the same AST
   drives every output format.
 - `src/output/` — multi-format rendering. Public entry is
-  `render(&[FileOutput], Format) -> Result<String, OutputError>`. Submodules: `markdown`, `json`, `jsonl`, `toml`.
+  `render(&[FileOutput], Format) -> Result<String, OutputError>`. Submodules: `markdown`, `json`, `jsonl`.
 - `src/markdown.rs` — generic Markdown validation built on `pulldown-cmark`, used by `output::markdown` to assert that
   the rendered output has a well-formed heading structure before it leaves the library.
 

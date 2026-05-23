@@ -306,26 +306,5 @@ pub(crate) mod java {
              */
             public class UserService {}
         "#;
-
-        pub(crate) const TOML_EMPTY_SHAPE: &str = r#"
-            package com.example;
-
-            public class EmptyShape {
-            }
-        "#;
-
-        pub(crate) const TOML_NON_EMPTY_SHAPE: &str = r#"
-            package com.example;
-
-            import java.util.List;
-
-            @Deprecated
-            public class NonEmptyShape<T> extends Base implements Runnable {
-                private List<String> names;
-
-                public void run() {
-                }
-            }
-        "#;
     }
 }

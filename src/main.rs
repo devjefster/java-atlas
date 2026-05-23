@@ -38,7 +38,6 @@ enum OutputFormat {
     Markdown,
     Json,
     Jsonl,
-    Toml,
 }
 
 impl From<OutputFormat> for Format {
@@ -47,7 +46,6 @@ impl From<OutputFormat> for Format {
             OutputFormat::Markdown => Format::Markdown,
             OutputFormat::Json => Format::Json,
             OutputFormat::Jsonl => Format::Jsonl,
-            OutputFormat::Toml => Format::Toml,
         }
     }
 }
@@ -153,7 +151,7 @@ fn print_existing_atlas(format: OutputFormat) -> Result<(), String> {
             }
             Ok(())
         }
-        OutputFormat::Json | OutputFormat::Toml => Err(
+        OutputFormat::Json => Err(
             "No default .atlas artifact exists for this format. Pass a source path, or use `--format jsonl` after `java-atlas init`."
                 .to_string(),
         ),

@@ -1,9 +1,8 @@
 # java-atlas
 
-A small command-line tool that walks a Java codebase and prints a summary of every `.java` file it finds — package,
-imports, and the shape of each declared type (class, interface, enum, record, annotation) with its annotations,
-modifiers, Javadocs, supertypes, fields, constructors, methods, and kind-specific members. Output is available in
-Markdown (default), JSON, or TOML.
+A small command-line tool that walks a Java codebase and prints a summary of every `.java` file it finds. Markdown
+output is compact by default for developer scanning and AI context usage; JSON and TOML expose the full structured AST
+with packages, imports, declarations, annotations, modifiers, Javadocs, type references, and members.
 
 ## Install
 
@@ -77,49 +76,21 @@ The tool emits a Markdown document with this shape:
 ```markdown
 # Java Atlas
 
-## File: `src/UserService.java`
+## `com.example`
 
-**Package:** `com.example`
-
-### Imports
-
-- `java.util.Optional`
-
-### Class `UserService`
-
-**Annotations:** `@Service`
-**Modifiers:** `public`
-**Type Parameters:** `T extends AutoCloseable`
-
-#### Fields
-
-| Documentation | Annotations | Modifiers | Type | Name |
-| --- | --- | --- | --- | --- |
-| Repository storage. | `@Inject` | `private final` | `UserRepository` | `repository` |
-
-#### Constructors
-
-##### `UserService`
-
-**Annotations:** `@Autowired`
-**Arguments:** `UserRepository repository`
-
-#### Methods
-
-##### `findById`
-
-> Finds a user.
-
-- `@param` id user id
-
-**Annotations:** `@Deprecated`
-**Returns:** `Optional<User>`
-**Arguments:** `@NotNull Long id`
+- `UserService.java`
+  - class: `@Service public UserService<T extends AutoCloseable>`
+    - fields: `@Inject private final UserRepository repository` - Repository storage.
+    - constructors: `@Autowired public UserService(UserRepository repository) throws ConfigurationException`
+    - methods: `@Deprecated public <E extends Exception> Optional<User> findById(@NotNull Long id) throws E` - Finds a user.
 ```
 
-Nested types are rendered recursively at the next heading depth. Leading Javadocs on types, fields, constructors,
-methods, and annotation elements are captured as structured documentation. Declaration and parameter annotations are
-rendered separately from Java keyword modifiers.
+Markdown groups files by package, omits imports and verbose Javadoc tags, and uses indented bullets to keep large
+codebase summaries practical. Standard field accessors are folded into field signatures as `[getter]`, `[setter]`, or
+`[add]`, and plain no-argument constructors are omitted. Leading Javadocs on types, fields, constructors, methods, and
+annotation elements are captured as structured documentation; Markdown renders their descriptions inline, while
+JSON/TOML retain descriptions and tags. Declaration and parameter annotations are rendered separately from Java keyword
+modifiers.
 
 The library model keeps Java type references and annotations structured. Type references distinguish primitives,
 references, generics, arrays, wildcards, and type-use annotations. Javadocs expose a description plus block tags.

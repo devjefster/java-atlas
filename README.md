@@ -1,8 +1,8 @@
 # java-atlas
 
-A small command-line tool that walks a Java codebase and prints a summary of every `.java` file it finds. Markdown
-output is compact by default for developer scanning and AI context usage; JSON and TOML expose the full structured AST
-with packages, imports, declarations, annotations, modifiers, Javadocs, type references, and members.
+A small command-line tool that walks a Java codebase and builds a compact atlas of every `.java` file it finds. Markdown
+output is compact by default for developer scanning and AI context usage; package-scoped JSONL is optimized for
+searchable/sliceable agent workflows; JSON and TOML remain available as structured exports.
 
 ## Install
 
@@ -22,20 +22,28 @@ cargo run -- [path]
 ## Usage
 
 ```bash
-java-atlas [path] [--format markdown|json|toml]
+java-atlas init [path] [--out-dir .atlas]
+java-atlas [path] [--format markdown|json|jsonl|toml]
 ```
 
-- `path` is the codebase root directory to scan. If omitted, the current directory is used.
+- `init` writes the recommended working set into `.atlas`: `atlas.md` plus package-scoped JSONL shards under
+  `.atlas/packages`.
+- For `init`, `path` defaults to `src/main/java`.
+- For direct rendering, `path` is the codebase root directory to scan. If omitted, the tool reads existing `.atlas`
+  artifacts where possible: Markdown prints `.atlas/atlas.md`, and JSONL concatenates `.atlas/packages/**/*.jsonl`.
 - The walker recurses through subdirectories, picks up every file with a `.java` extension, and skips any path component
   named `target`.
 - If `path` is not a directory the tool prints an error and exits non-zero.
-- `--format` (or `-f`) selects the output format; defaults to `markdown`. JSON emits a single pretty-printed array of
-  `{ path, ast }` entries; TOML emits package-grouped `[[packages]]` sections with compact file entries and omitted
-  empty collections. Redirect to a file to capture the output:
+- `--format` (or `-f`) selects the direct output format; defaults to `markdown`. JSON emits a single pretty-printed
+  array of `{ path, ast }` entries; JSONL emits one compact source-file record per line; TOML emits package-grouped
+  `[[packages]]` sections with compact file entries and omitted empty collections. Redirect direct output to a file to
+  capture it:
 
 ```bash
+java-atlas init ./my-service/src/main/java
 java-atlas ./my-service/src/main/java > atlas.md
 java-atlas ./my-service/src/main/java --format json > atlas.json
+java-atlas ./my-service/src/main/java --format jsonl > atlas.jsonl
 java-atlas ./my-service/src/main/java --format toml > atlas.toml
 ```
 
@@ -92,6 +100,12 @@ annotation elements are captured as structured documentation; Markdown renders t
 JSON/TOML retain descriptions and tags. Declaration and parameter annotations are rendered separately from Java keyword
 modifiers.
 
+`java-atlas init` is the recommended workflow for AI-assisted coding. It writes `.atlas/atlas.md` for human orientation
+and `.atlas/packages/<package-path>.jsonl` for targeted search/loading. Each JSONL package file contains one compact JSON
+object per source file, with path, package, imports, and types; empty collections and null optional fields are omitted.
+Use `rg` to find a class or symbol in the package shards, then load only the matching line or package file instead of
+the whole codebase atlas.
+
 The library model keeps Java type references and annotations structured. Type references distinguish primitives,
 references, generics, arrays, wildcards, and type-use annotations. Javadocs expose a description plus block tags.
 Annotations expose their name plus default or named arguments, including arrays, nested annotations, class literals,
@@ -105,6 +119,9 @@ and `nested_types` fields are equivalent to `[]`. TOML also folds deterministic 
 `accessors` arrays, renders those accessors inline, and omits plain no-argument constructors. Source `range` and
 `body_range` offsets remain present, rendered inline as two-number arrays.
 
+TOML is kept for consumers that want it, but it is not the most efficient format for large codebases. Prefer Markdown for
+overview and package JSONL for searchable agent context.
+
 ## Scope
 
 - Standard Java syntax only. The parser is `tree-sitter-java`; constructs that don't appear in the standard grammar
@@ -116,13 +133,13 @@ and `nested_types` fields are equivalent to `[]`. TOML also folds deterministic 
 
 The crate is a small library with a thin CLI on top:
 
-- `src/main.rs` — CLI: argument parsing (`--format`), directory walking, reading, printing.
+- `src/main.rs` — CLI: argument parsing (`init`, `--format`), directory walking, reading, printing, and `.atlas` writes.
 - `src/lib.rs` — declares the public `java_ast`, `markdown`, and `output` modules.
 - `src/java_ast/` — Tree-sitter parsing and the data model. Public entry is
   `parse_java_file(source: &str) -> Result<JavaFile, JavaAstError>`. All model types derive `Serialize` so the same AST
   drives every output format.
 - `src/output/` — multi-format rendering. Public entry is
-  `render(&[FileOutput], Format) -> Result<String, OutputError>`. Submodules: `markdown`, `json`, `toml`.
+  `render(&[FileOutput], Format) -> Result<String, OutputError>`. Submodules: `markdown`, `json`, `jsonl`, `toml`.
 - `src/markdown.rs` — generic Markdown validation built on `pulldown-cmark`, used by `output::markdown` to assert that
   the rendered output has a well-formed heading structure before it leaves the library.
 

@@ -2,11 +2,12 @@
 
 mod compact;
 mod json;
+mod jsonl;
 mod markdown;
 mod toml;
 
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::java_ast::JavaFile;
 use crate::markdown::MarkdownError;
@@ -16,6 +17,7 @@ use crate::markdown::MarkdownError;
 pub enum Format {
     Markdown,
     Json,
+    Jsonl,
     Toml,
 }
 
@@ -23,6 +25,13 @@ pub enum Format {
 pub struct FileOutput<'a> {
     pub path: &'a Path,
     pub ast: &'a JavaFile,
+}
+
+/// One package-scoped JSONL artifact ready to be written to disk.
+pub struct JsonlPackage {
+    pub package: String,
+    pub relative_path: PathBuf,
+    pub contents: String,
 }
 
 /// Errors raised by any output renderer.
@@ -69,6 +78,8 @@ impl From<::toml::ser::Error> for OutputError {
 /// - Markdown: emits one compact `# Java Atlas` document with a `##` section per
 ///   package and file bullets underneath.
 /// - JSON: emits a single array `[{ "path": ..., "ast": ... }, ...]`.
+/// - JSONL: emits one compact file record per line, grouped by package when
+///   written through [`render_jsonl_packages`].
 /// - TOML: emits one compact document with `[[packages]]` sections and
 ///   `[[packages.files]]` entries, skips empty collection fields, folds
 ///   deterministic accessors/default constructors, and renders compact arrays
@@ -77,6 +88,12 @@ pub fn render(files: &[FileOutput<'_>], format: Format) -> Result<String, Output
     match format {
         Format::Markdown => markdown::render(files),
         Format::Json => json::render(files),
+        Format::Jsonl => jsonl::render(files),
         Format::Toml => toml::render(files),
     }
+}
+
+/// Render package-scoped JSONL shards for `.atlas/packages`.
+pub fn render_jsonl_packages(files: &[FileOutput<'_>]) -> Result<Vec<JsonlPackage>, OutputError> {
+    jsonl::render_packages(files)
 }

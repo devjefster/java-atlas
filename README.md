@@ -2,8 +2,8 @@
 
 A small command-line tool that walks a Java codebase and prints a summary of every `.java` file it finds — package,
 imports, and the shape of each declared type (class, interface, enum, record, annotation) with its annotations,
-modifiers, supertypes, fields, constructors, methods, and kind-specific members. Output is available in Markdown
-(default), JSON, or TOML.
+modifiers, Javadocs, supertypes, fields, constructors, methods, and kind-specific members. Output is available in
+Markdown (default), JSON, or TOML.
 
 ## Install
 
@@ -51,6 +51,7 @@ import java.util.Optional;
 
 @Service
 public class UserService<T extends AutoCloseable> {
+    /** Repository storage. */
     @Inject
     private final UserRepository repository;
 
@@ -59,6 +60,11 @@ public class UserService<T extends AutoCloseable> {
         this.repository = repository;
     }
 
+    /**
+     * Finds a user.
+     *
+     * @param id user id
+     */
     @Deprecated
     public <E extends Exception> Optional<User> findById(@NotNull Long id) throws E {
         return Optional.empty();
@@ -71,54 +77,61 @@ The tool emits a Markdown document with this shape:
 ```markdown
 # Java Atlas
 
+## File: `src/UserService.java`
+
 **Package:** `com.example`
 
-## Imports
+### Imports
 
 - `java.util.Optional`
 
-## Class `UserService`
+### Class `UserService`
 
 **Annotations:** `@Service`
 **Modifiers:** `public`
 **Type Parameters:** `T extends AutoCloseable`
 
-### Fields
+#### Fields
 
-| Annotations | Modifiers | Type | Name |
-| --- | --- | --- | --- |
-| `@Inject` | `private final` | `UserRepository` | `repository` |
+| Documentation | Annotations | Modifiers | Type | Name |
+| --- | --- | --- | --- | --- |
+| Repository storage. | `@Inject` | `private final` | `UserRepository` | `repository` |
 
-### Constructors
+#### Constructors
 
-#### `UserService`
+##### `UserService`
 
 **Annotations:** `@Autowired`
 **Arguments:** `UserRepository repository`
 
-### Methods
+#### Methods
 
-#### `findById`
+##### `findById`
+
+> Finds a user.
+
+- `@param` id user id
 
 **Annotations:** `@Deprecated`
 **Returns:** `Optional<User>`
 **Arguments:** `@NotNull Long id`
 ```
 
-Nested types are rendered recursively at the next heading depth. Declaration and parameter annotations are rendered
-separately from Java keyword modifiers.
+Nested types are rendered recursively at the next heading depth. Leading Javadocs on types, fields, constructors,
+methods, and annotation elements are captured as structured documentation. Declaration and parameter annotations are
+rendered separately from Java keyword modifiers.
 
 The library model keeps Java type references and annotations structured. Type references distinguish primitives,
-references, generics, arrays, wildcards, and type-use annotations. Annotations expose their name plus default or named
-arguments, including arrays, nested annotations, class literals, primitive literals, references, and constant-expression
-text.
+references, generics, arrays, wildcards, and type-use annotations. Javadocs expose a description plus block tags.
+Annotations expose their name plus default or named arguments, including arrays, nested annotations, class literals,
+primitive literals, references, and constant-expression text.
 
 ## Scope
 
 - Standard Java syntax only. The parser is `tree-sitter-java`; constructs that don't appear in the standard grammar
   aren't recognized.
 - No framework awareness (no Spring, no Maven/Gradle resolution).
-- No cross-file linking — every file is summarized in isolation.
+- Cross-file type reference resolution is limited to types found in the parsed file set.
 
 ## Architecture
 

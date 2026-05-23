@@ -9,7 +9,8 @@ use super::helpers::{
     get_throws, get_type_parameters, node_text, parse_annotation_value, parse_type_ref,
 };
 use super::model::{
-    JavaAnnotationElement, JavaConstructor, JavaField, JavaFile, JavaMethod, JavaType, TypeKind,
+    JavaAnnotationElement, JavaConstructor, JavaDoc, JavaDocTag, JavaField, JavaFile, JavaMethod,
+    JavaType, TypeKind,
 };
 
 /// Parses one Java source file into the internal model.
@@ -187,6 +188,7 @@ fn parse_type(
     let mut java_type = JavaType {
         kind,
         name,
+        documentation: leading_javadoc(node, source),
         annotations,
         modifiers,
         type_parameters,
@@ -247,9 +249,13 @@ fn extract_fields(
         let mut ty = None;
         let mut name = String::new();
         let mut range = (0, 0);
+        let mut field_node = None;
         for capture in m.captures {
             match field_names[capture.index as usize] {
-                "field" => range = byte_range(capture.node),
+                "field" => {
+                    range = byte_range(capture.node);
+                    field_node = Some(capture.node);
+                }
                 "modifiers" => {
                     let metadata = get_declaration_metadata(capture.node, source);
                     annotations = metadata.annotations;
@@ -266,6 +272,7 @@ fn extract_fields(
             }
         }
         java_type.fields.push(JavaField {
+            documentation: field_node.and_then(|node| leading_javadoc(node, source)),
             annotations,
             modifiers,
             ty: ty.unwrap_or_else(|| parse_type_ref(body, source)),
@@ -312,9 +319,13 @@ fn extract_methods(
         let mut args = Vec::new();
         let mut throws = Vec::new();
         let mut range = (0, 0);
+        let mut method_node = None;
         for capture in m.captures {
             match method_names[capture.index as usize] {
-                "method" => range = byte_range(capture.node),
+                "method" => {
+                    range = byte_range(capture.node);
+                    method_node = Some(capture.node);
+                }
                 "modifiers" => {
                     let metadata = get_declaration_metadata(capture.node, source);
                     annotations = metadata.annotations;
@@ -334,6 +345,7 @@ fn extract_methods(
             }
         }
         java_type.methods.push(JavaMethod {
+            documentation: method_node.and_then(|node| leading_javadoc(node, source)),
             annotations,
             modifiers,
             type_parameters,
@@ -385,9 +397,13 @@ fn extract_constructors(
         let mut args = Vec::new();
         let mut throws = Vec::new();
         let mut range = (0, 0);
+        let mut constructor_node = None;
         for capture in m.captures {
             match constructor_names[capture.index as usize] {
-                "constructor" => range = byte_range(capture.node),
+                "constructor" => {
+                    range = byte_range(capture.node);
+                    constructor_node = Some(capture.node);
+                }
                 "modifiers" => {
                     let metadata = get_declaration_metadata(capture.node, source);
                     annotations = metadata.annotations;
@@ -401,6 +417,7 @@ fn extract_constructors(
             }
         }
         java_type.constructors.push(JavaConstructor {
+            documentation: constructor_node.and_then(|node| leading_javadoc(node, source)),
             annotations,
             modifiers,
             type_parameters,
@@ -485,9 +502,13 @@ fn extract_annotation_elements(
         let mut return_type = None;
         let mut default_value = None;
         let mut range = (0, 0);
+        let mut element_node = None;
         for capture in m.captures {
             match ann_element_names[capture.index as usize] {
-                "annotation_element" => range = byte_range(capture.node),
+                "annotation_element" => {
+                    range = byte_range(capture.node);
+                    element_node = Some(capture.node);
+                }
                 "modifiers" => {
                     annotations = get_declaration_metadata(capture.node, source).annotations;
                 }
@@ -505,6 +526,7 @@ fn extract_annotation_elements(
             }
         }
         java_type.annotation_elements.push(JavaAnnotationElement {
+            documentation: element_node.and_then(|node| leading_javadoc(node, source)),
             annotations,
             name,
             return_type: return_type.unwrap_or_else(|| parse_type_ref(body, source)),
@@ -629,6 +651,81 @@ fn is_type_body(kind: &str) -> bool {
     )
 }
 
+/// Finds and parses a Javadoc block immediately preceding a declaration.
+fn leading_javadoc(node: Node, source: &str) -> Option<JavaDoc> {
+    let before = source.get(..node.start_byte())?;
+    let trimmed = before.trim_end();
+    if !trimmed.ends_with("*/") {
+        return None;
+    }
+
+    let start = trimmed.rfind("/**")?;
+    parse_javadoc_block(&trimmed[start..])
+}
+
+/// Normalizes a raw `/** ... */` block into description text and block tags.
+fn parse_javadoc_block(raw: &str) -> Option<JavaDoc> {
+    if !raw.starts_with("/**") || !raw.ends_with("*/") {
+        return None;
+    }
+
+    let inner = &raw[3..raw.len() - 2];
+    let mut description_lines = Vec::new();
+    let mut tags = Vec::new();
+    let mut in_tags = false;
+
+    for line in inner.lines() {
+        let cleaned = clean_javadoc_line(line);
+        if let Some((name, text)) = cleaned.strip_prefix('@').and_then(split_javadoc_tag) {
+            in_tags = true;
+            tags.push(JavaDocTag { name, text });
+        } else if in_tags {
+            if let Some(tag) = tags.last_mut() {
+                append_javadoc_continuation(tag, &cleaned);
+            }
+        } else {
+            description_lines.push(cleaned);
+        }
+    }
+
+    Some(JavaDoc {
+        description: description_lines.join("\n").trim().to_string(),
+        tags,
+    })
+}
+
+fn clean_javadoc_line(line: &str) -> String {
+    let trimmed = line.trim_start();
+    trimmed
+        .strip_prefix('*')
+        .map(|line| line.strip_prefix(' ').unwrap_or(line))
+        .unwrap_or(trimmed)
+        .trim_end()
+        .to_string()
+}
+
+fn split_javadoc_tag(text: &str) -> Option<(String, String)> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut parts = trimmed.splitn(2, char::is_whitespace);
+    let name = parts.next()?.to_string();
+    let text = parts.next().unwrap_or("").trim().to_string();
+    Some((name, text))
+}
+
+fn append_javadoc_continuation(tag: &mut JavaDocTag, line: &str) {
+    let line = line.trim();
+    if line.is_empty() {
+        return;
+    }
+    if !tag.text.is_empty() {
+        tag.text.push(' ');
+    }
+    tag.text.push_str(line);
+}
+
 #[cfg(test)]
 mod tests {
     use crate::java_ast::model::{
@@ -751,6 +848,115 @@ mod tests {
         assert_eq!(file.types[0].kind, TypeKind::Annotation);
         assert_eq!(element.annotations[0].name, "Deprecated");
         assert_eq!(element.name, "value");
+    }
+
+    #[test]
+    fn parses_javadocs_on_declarations() {
+        let source = r#"
+            /**
+             * Service for users.
+             *
+             * @since 1.0
+             */
+            public class UserService {
+                /** Repository storage. */
+                private final UserRepository repository;
+
+                /**
+                 * Creates the service.
+                 *
+                 * @param repository storage dependency
+                 */
+                public UserService(UserRepository repository) {}
+
+                /**
+                 * Finds a user.
+                 * Continues the description.
+                 *
+                 * @param id user id
+                 *   continued tag text
+                 * @return optional user
+                 */
+                public Optional<User> findById(Long id) {
+                    return Optional.empty();
+                }
+            }
+
+            public @interface Labels {
+                /** Label value. */
+                String value();
+            }
+        "#;
+
+        let file = parse_java_file(source).expect("source should parse");
+        let service = &file.types[0];
+        let service_doc = service.documentation.as_ref().expect("type javadoc");
+        assert_eq!(service_doc.description, "Service for users.");
+        assert_eq!(service_doc.tags[0].name, "since");
+        assert_eq!(service_doc.tags[0].text, "1.0");
+
+        assert_eq!(
+            service.fields[0]
+                .documentation
+                .as_ref()
+                .expect("field javadoc")
+                .description,
+            "Repository storage."
+        );
+        assert_eq!(
+            service.constructors[0]
+                .documentation
+                .as_ref()
+                .expect("constructor javadoc")
+                .tags[0]
+                .text,
+            "repository storage dependency"
+        );
+
+        let method_doc = service.methods[0]
+            .documentation
+            .as_ref()
+            .expect("method javadoc");
+        assert_eq!(
+            method_doc.description,
+            "Finds a user.\nContinues the description."
+        );
+        assert_eq!(method_doc.tags[0].name, "param");
+        assert_eq!(method_doc.tags[0].text, "id user id continued tag text");
+        assert_eq!(method_doc.tags[1].name, "return");
+
+        assert_eq!(
+            file.types[1].annotation_elements[0]
+                .documentation
+                .as_ref()
+                .expect("annotation element javadoc")
+                .description,
+            "Label value."
+        );
+    }
+
+    #[test]
+    fn ignores_non_javadoc_and_non_leading_comments() {
+        let source = r#"
+            /* Ordinary block comment. */
+            public class Ordinary {
+                /* Ordinary field comment. */
+                private int x;
+
+                /** This documents the field, not the method. */
+                private int y;
+
+                public void run() {}
+            }
+        "#;
+
+        let file = parse_java_file(source).expect("source should parse");
+        let ty = &file.types[0];
+
+        assert!(ty.documentation.is_none());
+        assert!(ty.fields[0].documentation.is_none());
+        assert!(ty.fields[1].documentation.is_some());
+        assert!(ty.methods[0].documentation.is_none());
     }
 
     #[test]

@@ -279,6 +279,18 @@ impl fmt::Display for JavaTypeParameter {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct JavaDoc {
+    pub description: String,
+    pub tags: Vec<JavaDocTag>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct JavaDocTag {
+    pub name: String,
+    pub text: String,
+}
+
 fn write_annotations_prefix(
     f: &mut fmt::Formatter<'_>,
     annotations: &[JavaAnnotation],
@@ -304,6 +316,7 @@ pub struct JavaArgument {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct JavaField {
+    pub documentation: Option<JavaDoc>,
     pub annotations: Vec<JavaAnnotation>,
     pub modifiers: Vec<String>,
     pub ty: JavaTypeRef,
@@ -313,6 +326,7 @@ pub struct JavaField {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct JavaConstructor {
+    pub documentation: Option<JavaDoc>,
     pub annotations: Vec<JavaAnnotation>,
     pub modifiers: Vec<String>,
     pub type_parameters: Vec<JavaTypeParameter>,
@@ -324,6 +338,7 @@ pub struct JavaConstructor {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct JavaMethod {
+    pub documentation: Option<JavaDoc>,
     pub annotations: Vec<JavaAnnotation>,
     pub modifiers: Vec<String>,
     pub type_parameters: Vec<JavaTypeParameter>,
@@ -336,6 +351,7 @@ pub struct JavaMethod {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct JavaAnnotationElement {
+    pub documentation: Option<JavaDoc>,
     pub annotations: Vec<JavaAnnotation>,
     pub name: String,
     pub return_type: JavaTypeRef,
@@ -347,6 +363,7 @@ pub struct JavaAnnotationElement {
 pub struct JavaType {
     pub kind: TypeKind,
     pub name: String,
+    pub documentation: Option<JavaDoc>,
     pub annotations: Vec<JavaAnnotation>,
     pub modifiers: Vec<String>,
     pub type_parameters: Vec<JavaTypeParameter>,

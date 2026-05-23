@@ -98,4 +98,29 @@ mod tests {
             Some("com.example.model.User")
         );
     }
+
+    #[test]
+    fn toml_exposes_javadocs() {
+        let source = r#"
+            /**
+             * User service.
+             * @since 1.0
+             */
+            public class UserService {}
+        "#;
+
+        let ast = parse_java_file(source).expect("parse");
+        let path = PathBuf::from("src/UserService.java");
+        let files = vec![FileOutput {
+            path: &path,
+            ast: &ast,
+        }];
+        let rendered = dispatch_render(&files, Format::Toml).expect("render");
+
+        let parsed: ::toml::Value = ::toml::from_str(&rendered).expect("parse toml");
+        let doc = &parsed["files"][0]["ast"]["types"][0]["documentation"];
+        assert_eq!(doc["description"].as_str(), Some("User service."));
+        assert_eq!(doc["tags"][0]["name"].as_str(), Some("since"));
+        assert_eq!(doc["tags"][0]["text"].as_str(), Some("1.0"));
+    }
 }

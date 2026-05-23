@@ -65,8 +65,8 @@ impl From<::toml::ser::Error> for OutputError {
 /// Render a set of parsed files into a single string in the requested format.
 ///
 /// Aggregation rules per format:
-/// - Markdown: streams one rendered document per file, separated by
-///   `--- File: "<path>" ---` headers.
+/// - Markdown: emits one `# Java Atlas` document with a `## File` section per
+///   parsed file.
 /// - JSON: emits a single array `[{ "path": ..., "ast": ... }, ...]`.
 /// - TOML: emits a single document with a `[[files]]` table array.
 pub fn render(files: &[FileOutput<'_>], format: Format) -> Result<String, OutputError> {

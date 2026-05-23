@@ -93,4 +93,29 @@ mod tests {
         assert_eq!(service_field_ty["name"], "User");
         assert_eq!(service_field_ty["resolved_fqn"], "com.example.model.User");
     }
+
+    #[test]
+    fn json_exposes_javadocs() {
+        let source = r#"
+            /**
+             * User service.
+             * @since 1.0
+             */
+            public class UserService {}
+        "#;
+
+        let ast = parse_java_file(source).expect("parse");
+        let path = PathBuf::from("src/UserService.java");
+        let files = vec![FileOutput {
+            path: &path,
+            ast: &ast,
+        }];
+        let json = dispatch_render(&files, Format::Json).expect("render");
+
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse json");
+        let doc = &parsed[0]["ast"]["types"][0]["documentation"];
+        assert_eq!(doc["description"], "User service.");
+        assert_eq!(doc["tags"][0]["name"], "since");
+        assert_eq!(doc["tags"][0]["text"], "1.0");
+    }
 }

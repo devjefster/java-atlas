@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::java_ast::{JavaArgument, JavaFile, JavaType, TypeKind};
+use crate::java_ast::{JavaArgument, JavaDoc, JavaFile, JavaType, TypeKind};
 use crate::markdown::validate_markdown;
 
 use super::{FileOutput, OutputError};
@@ -66,6 +66,7 @@ fn render_type(ty: &JavaType, level: usize) -> String {
         "{} {} `{}`\n\n",
         type_heading, type_name_str, ty.name
     ));
+    render_documentation(&ty.documentation, &mut out);
 
     let mut meta = Vec::new();
     if !ty.annotations.is_empty() {
@@ -101,16 +102,33 @@ fn render_type(ty: &JavaType, level: usize) -> String {
 
     if !ty.fields.is_empty() {
         out.push_str(&format!("{} Fields\n\n", section_heading));
-        out.push_str("| Annotations | Modifiers | Type | Name |\n");
-        out.push_str("| --- | --- | --- | --- |\n");
+        let include_docs = ty.fields.iter().any(|field| field.documentation.is_some());
+        if include_docs {
+            out.push_str("| Documentation | Annotations | Modifiers | Type | Name |\n");
+            out.push_str("| --- | --- | --- | --- | --- |\n");
+        } else {
+            out.push_str("| Annotations | Modifiers | Type | Name |\n");
+            out.push_str("| --- | --- | --- | --- |\n");
+        }
         for field in &ty.fields {
-            out.push_str(&format!(
-                "| `{}` | `{}` | `{}` | `{}` |\n",
-                join_display(&field.annotations, " "),
-                field.modifiers.join(" "),
-                field.ty,
-                field.name
-            ));
+            if include_docs {
+                out.push_str(&format!(
+                    "| {} | `{}` | `{}` | `{}` | `{}` |\n",
+                    format_doc_table_cell(&field.documentation),
+                    join_display(&field.annotations, " "),
+                    field.modifiers.join(" "),
+                    field.ty,
+                    field.name
+                ));
+            } else {
+                out.push_str(&format!(
+                    "| `{}` | `{}` | `{}` | `{}` |\n",
+                    join_display(&field.annotations, " "),
+                    field.modifiers.join(" "),
+                    field.ty,
+                    field.name
+                ));
+            }
         }
         out.push('\n');
     }
@@ -119,6 +137,7 @@ fn render_type(ty: &JavaType, level: usize) -> String {
         out.push_str(&format!("{} Constructors\n\n", section_heading));
         for cons in &ty.constructors {
             out.push_str(&format!("{} `{}`\n\n", item_heading, cons.name));
+            render_documentation(&cons.documentation, &mut out);
             let mut meta = Vec::new();
             if !cons.annotations.is_empty() {
                 meta.push(format!(
@@ -157,6 +176,7 @@ fn render_type(ty: &JavaType, level: usize) -> String {
         out.push_str(&format!("{} Methods\n\n", section_heading));
         for method in &ty.methods {
             out.push_str(&format!("{} `{}`\n\n", item_heading, method.name));
+            render_documentation(&method.documentation, &mut out);
             let mut meta = Vec::new();
             if !method.annotations.is_empty() {
                 meta.push(format!(
@@ -221,6 +241,7 @@ fn render_type(ty: &JavaType, level: usize) -> String {
         out.push_str(&format!("{} Elements\n\n", section_heading));
         for elem in &ty.annotation_elements {
             out.push_str(&format!("{} `{}`\n\n", item_heading, elem.name));
+            render_documentation(&elem.documentation, &mut out);
             if !elem.annotations.is_empty() {
                 out.push_str(&format!(
                     "- **Annotations:** `{}`\n",
@@ -236,6 +257,47 @@ fn render_type(ty: &JavaType, level: usize) -> String {
     }
 
     out
+}
+
+fn render_documentation(doc: &Option<JavaDoc>, out: &mut String) {
+    let Some(doc) = doc else {
+        return;
+    };
+    if !doc.description.is_empty() {
+        for line in doc.description.lines() {
+            out.push_str(&format!("> {}\n", line));
+        }
+        out.push('\n');
+    }
+    if !doc.tags.is_empty() {
+        for tag in &doc.tags {
+            if tag.text.is_empty() {
+                out.push_str(&format!("- `@{}`\n", tag.name));
+            } else {
+                out.push_str(&format!("- `@{}` {}\n", tag.name, tag.text));
+            }
+        }
+        out.push('\n');
+    }
+}
+
+fn format_doc_table_cell(doc: &Option<JavaDoc>) -> String {
+    let Some(doc) = doc else {
+        return String::new();
+    };
+    let mut parts = Vec::new();
+    if !doc.description.is_empty() {
+        parts.push(doc.description.replace('|', "\\|").replace('\n', "<br>"));
+    }
+    parts.extend(doc.tags.iter().map(|tag| {
+        let tag_text = if tag.text.is_empty() {
+            format!("@{}", tag.name)
+        } else {
+            format!("@{} {}", tag.name, tag.text)
+        };
+        tag_text.replace('|', "\\|").replace('\n', "<br>")
+    }));
+    parts.join("<br>")
 }
 
 fn format_args(args: &[JavaArgument]) -> String {
@@ -355,5 +417,48 @@ mod tests {
         assert!(markdown.contains("## File: `src/B.java`"));
         assert!(markdown.contains("### Class `A`"));
         assert!(markdown.contains("### Class `B`"));
+    }
+
+    #[test]
+    fn markdown_renders_javadocs() {
+        let source = r#"
+            /** Service docs. */
+            public class UserService {
+                /**
+                 * Repository docs.
+                 * @see UserRepository
+                 */
+                private final UserRepository repository;
+
+                /**
+                 * Finds a user.
+                 *
+                 * @param id user id
+                 * @return optional user
+                 */
+                public Optional<User> findById(Long id) {
+                    return Optional.empty();
+                }
+            }
+        "#;
+
+        let ast = parse_java_file(source).expect("parse");
+        let path = PathBuf::from("src/UserService.java");
+        let files = vec![FileOutput {
+            path: &path,
+            ast: &ast,
+        }];
+        let markdown = dispatch_render(&files, Format::Markdown).expect("render");
+
+        assert!(markdown.contains("> Service docs."));
+        assert!(
+            markdown.contains(
+                "| Documentation | Annotations | Modifiers | Type | Name |\n| --- | --- | --- | --- | --- |"
+            )
+        );
+        assert!(markdown.contains("Repository docs.<br>@see UserRepository"));
+        assert!(markdown.contains("> Finds a user."));
+        assert!(markdown.contains("- `@param` id user id"));
+        assert!(markdown.contains("- `@return` optional user"));
     }
 }
